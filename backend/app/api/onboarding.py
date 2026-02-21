@@ -86,10 +86,12 @@ async def submit_onboarding(request: OnboardingSubmitRequest) -> OnboardingResul
     Submit onboarding answers and get calibrated initial state.
     """
     state, policies = process_onboarding(request.user_id, request.answers)
-    
-    # In a real implementation, we'd persist these to the database
-    # For now, we return them for the client to see
-    
+
+    # Persist to in-memory store so intents/planning can use them
+    from app.api.intents import _user_states, _user_policies
+    _user_states[request.user_id] = state
+    _user_policies[request.user_id] = policies
+
     return OnboardingResultResponse(
         success=True,
         state=StateResponse(

@@ -4,11 +4,9 @@ from datetime import datetime
 from typing import Optional, List, Dict
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_session
 from app.models.human_state import HumanState
 from app.models.safety_policy import SafetyPolicy
 from app.models.timeline import ScheduledBlock
@@ -81,6 +79,7 @@ class IntentResponse(BaseModel):
 _hypotheses: dict[UUID, dict] = {}
 _user_states: dict[UUID, HumanState] = {}
 _user_blocks: dict[UUID, list[ScheduledBlock]] = {}
+_user_policies: dict[UUID, list[SafetyPolicy]] = {}
 _timeline_changes: dict[UUID, dict] = {}
 
 
@@ -100,11 +99,14 @@ def get_user_blocks(user_id: UUID) -> list[ScheduledBlock]:
 
 
 def get_user_policies(user_id: UUID) -> list[SafetyPolicy]:
-    """Get user's safety policies (default set for MVP)."""
-    # Default policies for all users
+    """Get user's safety policies (from onboarding or defaults)."""
+    if user_id in _user_policies:
+        return _user_policies[user_id]
+
+    # Default policies for users who skipped onboarding
     from app.models.safety_policy import ActivationCondition, PolicySource, DecayCurve
-    
-    return [
+
+    defaults = [
         SafetyPolicy(
             user_id=user_id,
             name="Prevent Cognitive Overload",
@@ -138,6 +140,8 @@ def get_user_policies(user_id: UUID) -> list[SafetyPolicy]:
             decay_rate=0.01,
         ),
     ]
+    _user_policies[user_id] = defaults
+    return defaults
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
