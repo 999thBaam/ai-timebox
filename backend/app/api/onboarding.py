@@ -268,34 +268,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
     )
 
 
-@router.post("/generate", response_model=GeneratedScheduleResponse)
-async def generate_schedule(request: GenerateScheduleRequest) -> GeneratedScheduleResponse:
-    """Generate the schedule based on gathered intents."""
-    session = onboarding_orchestrator.get_session(request.session_id)
-    if not session:
-        raise ValueError("Session not found")
-        
-    target_date = datetime.strptime(request.date, "%Y-%m-%d")
-    schedule = schedule_generator.generate(session, target_date)
-    
-    return GeneratedScheduleResponse(
-        blocks=[
-            BlockResponse(
-                id=b.id, # Map intent_id to id if block id is ephemeral, or use block UUID
-                start_time=b.start_time,
-                end_time=b.end_time,
-                goal=b.goal,
-                activity_nature=b.activity_nature,
-                is_locked=b.is_locked,
-            )
-            for b in schedule.blocks
-        ],
-        confidence=schedule.confidence,
-        has_overflow=schedule.has_overflow,
-        overflow_count=len(schedule.overflow_tasks)
-    )
-
-
 # --- Adaptive Role Selection & Questionnaire (Phase 6) ---
 
 

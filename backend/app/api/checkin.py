@@ -5,7 +5,7 @@ from app.services.checkin_generator import CheckInGenerator, QUESTION_TEMPLATES
 from app.services.belief_store import get_beliefs, update_beliefs
 from app.services.belief_updater import SignalType
 
-router = APIRouter(prefix="/api/checkin", tags=["checkin"])
+router = APIRouter()
 _checkin_generator = CheckInGenerator()
 
 @router.get("/next")

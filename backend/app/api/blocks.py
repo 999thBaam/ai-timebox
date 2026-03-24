@@ -3,7 +3,7 @@ from starlette.responses import JSONResponse
 from app.services.belief_store import get_beliefs, update_beliefs
 from app.services.behavioral_tracker import BehavioralTracker
 
-router = APIRouter(prefix="/api/blocks", tags=["blocks"])
+router = APIRouter()
 _tracker = BehavioralTracker()
 
 @router.patch("/{block_id}/status")

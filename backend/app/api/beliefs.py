@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.services.belief_store import get_beliefs as get_stored_beliefs
 
-router = APIRouter(prefix="/api/beliefs", tags=["beliefs"])
+router = APIRouter()
 
 @router.get("")
 async def get_beliefs():

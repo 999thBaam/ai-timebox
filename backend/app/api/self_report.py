@@ -4,7 +4,7 @@ from starlette.responses import JSONResponse
 from app.services.belief_store import get_beliefs, update_beliefs
 from app.services.behavioral_tracker import BehavioralTracker
 
-router = APIRouter(prefix="/api/self-report", tags=["self-report"])
+router = APIRouter()
 _tracker = BehavioralTracker()
 
 @router.post("/energy")

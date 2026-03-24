@@ -283,6 +283,27 @@ class AdaptiveQuestionnaire:
 
         return beliefs
 
+    def get_policies(self) -> list[dict]:
+        """
+        Return safety policies derived from the role profile's default_policies,
+        plus any adaptive policies based on questionnaire answers.
+
+        Each policy is a dict with description/condition/action keys.
+        """
+        policies = list(self.profile.default_policies)
+
+        # If context_switch_cost is high, add a buffer policy
+        beliefs = self.get_beliefs()
+        context_switch_cost = beliefs[BeliefParameter.CONTEXT_SWITCH_COST].belief_value
+        if context_switch_cost > 0.6:
+            policies.append({
+                "description": "Insert buffer between tasks due to high context-switch cost",
+                "condition": "task_transition == true",
+                "action": "INSERT_BUFFER_10",
+            })
+
+        return policies
+
     def get_summary(self) -> str:
         """Return a natural-language summary of the user's profile based on answers."""
         beliefs = self.get_beliefs()
