@@ -1,12 +1,22 @@
 from __future__ import annotations
 """SQLAlchemy ORM models for database tables."""
+import enum
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class BlockStatus(str, enum.Enum):
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    SKIPPED = "skipped"
+    PARTIAL = "partial"
+    RESCHEDULED = "rescheduled"
 
 
 class Base(DeclarativeBase):
@@ -21,6 +31,7 @@ class UserORM(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.now)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    role: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class IntentHypothesisORM(Base):
@@ -91,6 +102,7 @@ class ScheduledBlockORM(Base):
     buffer_before_minutes: Mapped[int] = mapped_column(Integer, default=0)
     buffer_after_minutes: Mapped[int] = mapped_column(Integer, default=0)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String, default="scheduled", nullable=False)
 
 
 class TimelineChangeORM(Base):
@@ -108,3 +120,16 @@ class TimelineChangeORM(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     undone: Mapped[bool] = mapped_column(Boolean, default=False)
     undone_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserBeliefORM(Base):
+    """User beliefs for Bayesian modeling."""
+    __tablename__ = "user_beliefs"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    parameter: Mapped[str] = mapped_column(String, nullable=False)
+    belief_value: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    last_updated: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    evidence_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
