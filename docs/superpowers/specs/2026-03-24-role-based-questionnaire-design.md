@@ -18,7 +18,7 @@ The questionnaire is not the product — it's the cold start. The learning engin
 
 ## 1. Role Profiles (Seed Parameters)
 
-Five roles, each providing initial values for six scheduling parameters:
+Five roles, each providing initial values for seven scheduling parameters:
 
 | Parameter | Student | Professional | Freelancer | Manager | Creative |
 |-----------|---------|-------------|------------|---------|----------|
@@ -28,6 +28,7 @@ Five roles, each providing initial values for six scheduling parameters:
 | Context-switch cost | High (0.7) | Medium (0.5) | Medium (0.5) | Low (0.3) | Very High (0.8) |
 | Chaos tolerance | 0.4 | 0.5 | 0.6 | 0.7 | 0.3 |
 | Cognitive recovery rate | Fast (0.15/hr) | Medium (0.10/hr) | Medium (0.10/hr) | Fast (0.15/hr) | Slow (0.07/hr) |
+| Guidance level | 0.5 | 0.5 | 0.3 | 0.3 | 0.5 |
 
 **Selection:** First screen of onboarding. Single selection: "What best describes you?" All values are starting points with initial confidence of 0.5.
 
@@ -82,12 +83,12 @@ No editable profile. No visible labels or classifications.
 
 ### 3.1 Belief Model
 
-Each user has 6 parameters, each stored as a belief:
+Each user has 7 parameters, each stored as a belief:
 
 ```
 UserBelief:
   parameter: enum (peak_energy, deep_work_tolerance, context_switch_cost,
-                   chaos_tolerance, meeting_tolerance, recovery_rate)
+                   chaos_tolerance, meeting_tolerance, recovery_rate, guidance_level)
   belief_value: float     # Current estimate
   confidence: float       # 0.0 - 0.95
   last_updated: timestamp
@@ -119,6 +120,7 @@ All belief parameters are stored as floats. Here's how each is encoded:
 | `chaos_tolerance` | 0-1 scale | 0.0 - 1.0 | 0.4 |
 | `meeting_tolerance` | 0-1 scale | 0.0 - 1.0 | Low = 0.3 |
 | `recovery_rate` | Units per hour | 0.03 - 0.20 | Fast = 0.15 |
+| `guidance_level` | 0-1 scale | 0.0 - 1.0 | Minimal = 0.2, Balanced = 0.5, Involved = 0.8 |
 
 **Questionnaire answer encodings:**
 
@@ -153,7 +155,17 @@ new_confidence = min(old_confidence + signal_weight * 0.1, 0.95)
 - new_confidence = min(0.5 + 0.3 × 0.1, 0.95) = 0.53
 - Result: Peak energy shifts from 22.0 → 19.0 (7pm), confidence 0.53
 
-Note: For `peak_energy`, the belief value wraps around 24h. When `abs(old_belief - observation) > 12`, use modular arithmetic: treat 23.0 and 1.0 as 2 hours apart, not 22.
+Note: For `peak_energy`, the belief value wraps around 24h. Use circular distance: `distance = min(abs(a - b), 24 - abs(a - b))`. When `abs(old_belief - observation) > 12`, adjust the observation by ±24 before averaging.
+
+**Wrapping example:**
+- Old belief: 23.0 (11pm), confidence: 0.5
+- Observation: User completes block at 1.0 (1am) → signal_weight = 0.3
+- Naive abs distance: |23.0 - 1.0| = 22.0 (wrong)
+- Circular distance: min(22.0, 24 - 22.0) = 2.0 (correct — 11pm and 1am are 2 hours apart)
+- Adjusted observation: 1.0 + 24 = 25.0 (shift up to keep on same side)
+- new_belief = (23.0 × 0.5 + 25.0 × 0.3) / (0.5 + 0.3) = (11.5 + 7.5) / 0.8 = 23.75
+- Normalize: 23.75 mod 24 = 23.75 (11:45pm)
+- Result: Peak energy shifts from 23.0 → 23.75 (toward 1am, correct direction)
 
 Signal weights:
 - Block completion/skip: **0.3**
@@ -230,6 +242,7 @@ Each question is contextual — references real data from the past week, not gen
 | `BehavioralTracker` | Observes signals from block completions, reschedules, self-scheduling | `backend/app/services/behavioral_tracker.py` |
 | `BeliefUpdater` | Runs the Bayesian update formula, manages confidence decay | `backend/app/services/belief_updater.py` |
 | `CheckInGenerator` | Picks lowest-confidence parameter, generates contextual question | `backend/app/services/checkin_generator.py` |
+| `SchedulingContext` | Dataclass holding resolved belief values for the planner | `backend/app/models/scheduling_context.py` |
 
 ### 5.2 Changes to Existing Components
 
