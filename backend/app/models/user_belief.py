@@ -1,10 +1,13 @@
-from __future__ import annotations
 """UserBelief Model — Per-parameter belief with weighted-average update and confidence decay."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from app.models.role_profile import BeliefParameter
+
+if TYPE_CHECKING:
+    pass
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -39,7 +42,7 @@ class UserBelief:
     # Public API
     # ------------------------------------------------------------------
 
-    def update(self, observation: float, signal_weight: float) -> UserBelief:
+    def update(self, observation: float, signal_weight: float) -> "UserBelief":
         """Return a new UserBelief with the observation incorporated via weighted average.
 
         Formula:
@@ -69,7 +72,7 @@ class UserBelief:
             evidence_count=self.evidence_count + 1,
         )
 
-    def with_decay(self) -> UserBelief:
+    def with_decay(self) -> "UserBelief":
         """Return a new UserBelief with confidence decayed based on elapsed time.
 
         Decay = days_since_last_update * CONFIDENCE_DECAY_PER_DAY, floored at CONFIDENCE_FLOOR.
