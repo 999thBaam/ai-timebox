@@ -241,3 +241,61 @@ export async function generateSchedule(sessionId: string, date: string): Promise
     if (!res.ok) throw new Error(`Failed to generate schedule: ${res.statusText}`);
     return res.json();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROLE SELECTION & ADAPTIVE QUESTIONNAIRE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function selectRole(role: string) {
+    const res = await fetch(`${API_BASE}/api/onboarding/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+    });
+    return res.json();
+}
+
+export async function submitQuestionnaireAnswer(sessionId: string, questionId: string, answer: string) {
+    const res = await fetch(`${API_BASE}/api/onboarding/questionnaire`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, question_id: questionId, answer }),
+    });
+    return res.json();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHECK-IN & SELF-REPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function getCheckIn() {
+    const res = await fetch(`${API_BASE}/api/checkin/next`);
+    return res.json();
+}
+
+export async function submitCheckIn(parameter: string, answer: string) {
+    const res = await fetch(`${API_BASE}/api/checkin/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parameter, answer }),
+    });
+    return res.json();
+}
+
+export async function submitEnergyReport(blockId: string, level: string) {
+    const res = await fetch(`${API_BASE}/api/self-report/energy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ block_id: blockId, level }),
+    });
+    return res.json();
+}
+
+export async function updateBlockStatus(blockId: string, status: string) {
+    const res = await fetch(`${API_BASE}/api/blocks/${blockId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+    });
+    return res.json();
+}

@@ -8,15 +8,25 @@ import {
     setOnboardingTheme,
     sendOnboardingChat,
     generateSchedule,
+    selectRole,
+    submitQuestionnaireAnswer,
     TimelineBlock
 } from '@/lib/api';
 import Timeline from '@/components/Timeline';
+import RoleSelector from '@/components/RoleSelector';
+import AdaptiveQuestion from '@/components/AdaptiveQuestion';
+import ProfileSummary from '@/components/ProfileSummary';
 
 export default function OnboardingPage() {
     const router = useRouter();
-    const [phase, setPhase] = useState<'init' | 'form' | 'theme' | 'chat' | 'preview'>('init');
+    const [phase, setPhase] = useState<'role' | 'questionnaire' | 'summary' | 'init' | 'form' | 'theme' | 'chat' | 'preview'>('role');
     const [sessionId, setSessionId] = useState<string>('');
     const [loading, setLoading] = useState(false);
+
+    // Role & Questionnaire State
+    const [selectedRole, setSelectedRole] = useState<string | null>(null);
+    const [currentQuestion, setCurrentQuestion] = useState<{ id: string; text: string; options: string[] } | null>(null);
+    const [summary, setSummary] = useState<string>('');
 
     // Form State
     const [form, setForm] = useState({
@@ -37,20 +47,55 @@ export default function OnboardingPage() {
     // Preview State
     const [schedule, setSchedule] = useState<TimelineBlock[]>([]);
 
-    // Start session on mount
-    useEffect(() => {
-        const initSession = async () => {
-            try {
-                // Hardcoded user ID for MVP
-                const res = await startOnboardingSession('00000000-0000-0000-0000-000000000001');
-                setSessionId(res.session_id);
-                setPhase('form');
-            } catch (e) {
-                console.error(e);
+    // Handlers for role selection & questionnaire
+    const handleRoleSelect = async (role: string) => {
+        setSelectedRole(role);
+        setLoading(true);
+        try {
+            const res = await selectRole(role);
+            setSessionId(res.session_id);
+            setCurrentQuestion(res.first_question);
+            setPhase('questionnaire');
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleQuestionAnswer = async (questionId: string, answer: string) => {
+        if (!sessionId) return;
+        setLoading(true);
+        try {
+            const res = await submitQuestionnaireAnswer(sessionId, questionId, answer);
+            if (res.next_question === null) {
+                setSummary(res.summary || 'Profile built based on your answers.');
+                setPhase('summary');
+            } else {
+                setCurrentQuestion(res.next_question);
             }
-        };
-        initSession();
-    }, []);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSummaryContinue = async () => {
+        setLoading(true);
+        try {
+            // Start onboarding session for profile + schedule flow
+            const res = await startOnboardingSession('00000000-0000-0000-0000-000000000001');
+            setSessionId(res.session_id);
+            setPhase('form');
+        } catch (e) {
+            console.error(e);
+            // Fallback: proceed with existing session
+            setPhase('form');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // Auto-scroll chat
     useEffect(() => {
@@ -138,7 +183,10 @@ export default function OnboardingPage() {
                         Setup Your Cognitive Calendar
                     </h1>
                     <div className="flex justify-center gap-2 mt-4">
-                        <Step active={phase === 'form'} done={phase !== 'init' && phase !== 'form'} />
+                        <Step active={phase === 'role'} done={phase !== 'role'} />
+                        <Step active={phase === 'questionnaire'} done={!['role', 'questionnaire'].includes(phase)} />
+                        <Step active={phase === 'summary'} done={!['role', 'questionnaire', 'summary'].includes(phase)} />
+                        <Step active={phase === 'form'} done={!['role', 'questionnaire', 'summary', 'form'].includes(phase)} />
                         <Step active={phase === 'theme'} done={phase === 'chat' || phase === 'preview'} />
                         <Step active={phase === 'chat'} done={phase === 'preview'} />
                         <Step active={phase === 'preview'} done={false} />
@@ -146,6 +194,18 @@ export default function OnboardingPage() {
                 </div>
 
                 {/* Content */}
+                {phase === 'role' && (
+                    <RoleSelector onSelect={handleRoleSelect} selected={selectedRole} />
+                )}
+
+                {phase === 'questionnaire' && currentQuestion && (
+                    <AdaptiveQuestion question={currentQuestion} onAnswer={handleQuestionAnswer} />
+                )}
+
+                {phase === 'summary' && (
+                    <ProfileSummary summary={summary} onContinue={handleSummaryContinue} />
+                )}
+
                 {phase === 'init' && (
                     <div className="text-center py-12 text-slate-400">Initializing...</div>
                 )}
