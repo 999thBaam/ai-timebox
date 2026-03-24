@@ -1,0 +1,72 @@
+.container {
+    margin-bottom: 1.5rem;
+}
+
+.indicator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    width: fit-content;
+}
+
+.energy,
+.load {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.emoji {
+    font-size: 1rem;
+}
+
+.label {
+    font-size: 0.85rem;
+    color: #94a3b8;
+    text-transform: capitalize;
+}
+
+.divider {
+    width: 1px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--load-color);
+}
+
+.recommendation {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin: 0.75rem 0 0 0;
+    font-style: italic;
+}
+
+.skeleton {
+    height: 44px;
+    width: 200px;
+    background: linear-gradient(90deg,
+            rgba(255, 255, 255, 0.03) 25%,
+            rgba(255, 255, 255, 0.06) 50%,
+            rgba(255, 255, 255, 0.03) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 10px;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}

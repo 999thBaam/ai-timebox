@@ -1,0 +1,6 @@
+.container { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #1a1a1a; border-radius: 12px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 1rem; border: 1px solid #333; z-index: 900; animation: slideIn 0.3s ease-out; }
+@keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.label { font-size: 0.9rem; color: #aaa; }
+.buttons { display: flex; gap: 0.5rem; }
+.btn { padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid #444; background: transparent; color: #e0e0e0; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
+.btn:hover { border-color: #4a9eff; background: #1a2a3a; }
