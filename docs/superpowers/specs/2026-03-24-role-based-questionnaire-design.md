@@ -8,9 +8,11 @@
 
 ## Overview
 
-A personality classification system that seeds user profiles based on role, fine-tunes via adaptive questioning, and continuously learns from behavior. The system uses Bayesian-style belief updating to adapt scheduling parameters in real time, with weekly check-ins targeting the highest-uncertainty parameter.
+A personality classification system that seeds user profiles based on role, fine-tunes via adaptive questioning, and continuously learns from behavior. The system uses weighted-average belief updating to adapt scheduling parameters in real time, with weekly check-ins targeting the highest-uncertainty parameter.
 
 The questionnaire is not the product — it's the cold start. The learning engine is the product.
+
+**Key distinction:** The belief system operates on 6 *scheduling preferences* (peak_energy, deep_work_tolerance, etc.) that are higher-level than the 7 HumanState *cognitive dimensions* (cognitive_load, energy_level, etc.). Beliefs inform how HumanState parameters are initialized and how the planner selects time slots — they don't replace HumanState.
 
 ---
 
@@ -65,7 +67,7 @@ Triggered when core answers conflict with role defaults:
 
 - Minimum: 4 (role + 3 core)
 - Maximum: 7 (role + 3 core + 3 adaptive)
-- Adaptive questions only fire when conflict confidence exceeds 0.3 (i.e., the core answer meaningfully diverges from role default)
+- Adaptive questions fire when the **conflict score** exceeds 0.3. Conflict score is the normalized absolute difference between the questionnaire answer and the role default: `conflict = abs(answer_encoded - role_default_encoded) / parameter_range`. For example, if a Student (default peak_energy = 22.0) answers "Morning" (encoded as 9.0), conflict = abs(9.0 - 22.0) / 24.0 = 0.54 → triggers follow-up.
 
 ### 2.4 Output
 
@@ -105,12 +107,53 @@ Four signals the system observes:
 | Self-initiated scheduling | When user freely adds a task, what time? | Log chosen slot |
 | Energy self-report | User-rated energy level | 1-tap prompt (low/ok/great) at end of deep work blocks |
 
-### 3.3 Update Formula
+### 3.3 Numeric Encoding
+
+All belief parameters are stored as floats. Here's how each is encoded:
+
+| Parameter | Encoding | Range | Example |
+|-----------|----------|-------|---------|
+| `peak_energy` | Hour of day (float, 24h) | 0.0 - 23.99 | 10pm = 22.0, 2pm = 14.0 |
+| `deep_work_tolerance` | Minutes | 15.0 - 180.0 | 45 min = 45.0 |
+| `context_switch_cost` | 0-1 scale | 0.0 - 1.0 | High = 0.7 |
+| `chaos_tolerance` | 0-1 scale | 0.0 - 1.0 | 0.4 |
+| `meeting_tolerance` | 0-1 scale | 0.0 - 1.0 | Low = 0.3 |
+| `recovery_rate` | Units per hour | 0.03 - 0.20 | Fast = 0.15 |
+
+**Questionnaire answer encodings:**
+
+| Question | Answer → Encoded value |
+|----------|----------------------|
+| "When do you feel sharpest?" | Morning = 9.0, Afternoon = 14.0, Evening = 20.0, Late Night = 23.0 |
+| "How long can you focus?" | Under 30 min = 25.0, 30-60 min = 45.0, 1-2 hours = 90.0, 2+ hours = 150.0 |
+| "What drains you most?" | Meetings → meeting_tolerance -= 0.2; Context switching → context_switch_cost += 0.2; Long focus → deep_work_tolerance -= 15.0 |
+
+**Observation encodings (from behavioral signals):**
+
+| Signal | Observation value |
+|--------|------------------|
+| Block completed at time T | peak_energy observation = T (hour float) |
+| Block skipped at time T | peak_energy observation = opposite_of(T): if T < 12 then 20.0, else 10.0 |
+| Reschedule from T1 to T2 | peak_energy observation = T2 |
+| Block of duration D completed | deep_work_tolerance observation = D (minutes) |
+| Block of duration D partially completed | deep_work_tolerance observation = D × 0.5 |
+| Energy self-report: Low/OK/Great | Maps to 0.3 / 0.6 / 0.9 as energy observation for current hour |
+
+### 3.4 Update Formula
 
 ```
 new_belief = (old_belief * old_confidence + observation * signal_weight) / (old_confidence + signal_weight)
 new_confidence = min(old_confidence + signal_weight * 0.1, 0.95)
 ```
+
+**Worked example — peak_energy update:**
+- Old belief: 22.0 (10pm), confidence: 0.5
+- Observation: User completes block at 14.0 (2pm) → signal_weight = 0.3
+- new_belief = (22.0 × 0.5 + 14.0 × 0.3) / (0.5 + 0.3) = (11.0 + 4.2) / 0.8 = 19.0
+- new_confidence = min(0.5 + 0.3 × 0.1, 0.95) = 0.53
+- Result: Peak energy shifts from 22.0 → 19.0 (7pm), confidence 0.53
+
+Note: For `peak_energy`, the belief value wraps around 24h. When `abs(old_belief - observation) > 12`, use modular arithmetic: treat 23.0 and 1.0 as 2 hours apart, not 22.
 
 Signal weights:
 - Block completion/skip: **0.3**
@@ -118,13 +161,13 @@ Signal weights:
 - Self-scheduled time choice: **0.2**
 - Energy self-report: **0.5** (direct input, highest trust)
 
-### 3.4 Confidence Mechanics
+### 3.5 Confidence Mechanics
 
 - **Cap:** 0.95 — system never reaches full certainty, always stays open to change
 - **Decay:** Confidence decays by 0.01/day if no new evidence arrives for a parameter
 - **Floor:** Confidence never drops below 0.2 — prevents wild swings from single observations after long inactivity
 
-### 3.5 Parameter-Signal Mapping
+### 3.6 Parameter-Signal Mapping
 
 | Parameter | Updated by |
 |-----------|-----------|
@@ -135,7 +178,7 @@ Signal weights:
 | Meeting tolerance | Completion/skip rates for meeting-adjacent blocks |
 | Cognitive recovery rate | Time gap between block end and next user-initiated block start |
 
-### 3.6 Example Adaptation Timeline
+### 3.7 Example Adaptation Timeline
 
 Day 1: Student role selected, questionnaire says "sharpest in evening." Peak energy belief = 10pm, confidence 0.5.
 
@@ -231,9 +274,107 @@ Role Selection
   → Loop continues
 ```
 
-### 5.5 Untouched Components
+### 5.5 Belief-to-HumanState Resolution Function
 
-- Safety policies — still act as guardrails regardless of beliefs
+Beliefs are scheduling preferences. HumanState is the real-time cognitive state. Beliefs influence HumanState initialization and planner decisions — they don't replace HumanState fields.
+
+**Resolution (runs before each scheduling call):**
+
+```python
+def resolve_beliefs_to_scheduling_context(beliefs: dict[str, UserBelief], current_time: datetime) -> SchedulingContext:
+    """Convert beliefs into parameters the planner uses."""
+    return SchedulingContext(
+        # peak_energy belief → planner's preferred time window for deep work
+        peak_energy_start=beliefs['peak_energy'].belief_value - 1.5,  # 1.5 hours before peak
+        peak_energy_end=beliefs['peak_energy'].belief_value + 1.5,    # 1.5 hours after peak
+
+        # deep_work_tolerance → max block duration the planner will create
+        max_block_duration_minutes=beliefs['deep_work_tolerance'].belief_value,
+
+        # context_switch_cost → min buffer between different-context blocks
+        min_buffer_minutes=beliefs['context_switch_cost'].belief_value * 30,  # 0.7 → 21 min buffer
+
+        # chaos_tolerance → HumanState.chaos_tolerance (direct map, same scale)
+        initial_chaos_tolerance=beliefs['chaos_tolerance'].belief_value,
+
+        # meeting_tolerance → max consecutive meetings before forced break
+        max_consecutive_meetings=round(beliefs['meeting_tolerance'].belief_value * 5),  # 0.8 → 4 meetings
+
+        # recovery_rate → HumanState cognitive recovery rate (direct map)
+        cognitive_recovery_rate=beliefs['recovery_rate'].belief_value,
+    )
+```
+
+**What stays on HumanState:** `cognitive_load`, `emotional_load`, `energy_level`, `context_residue`, `confidence`, `fragility` remain real-time values computed from task impacts and decay. Beliefs don't overwrite these — they inform the planner's *decisions* about what to schedule when.
+
+### 5.6 Safety Policy Migration
+
+The existing `questionnaire.py` creates initial `SafetyPolicy` objects from onboarding answers. The new system preserves this:
+
+- **Role profiles include default safety policies.** Each role has 2-3 preset policies (e.g., Student: "no deep work blocks after 2am", Manager: "mandatory break after 3 consecutive meetings").
+- **Adaptive questionnaire may add policies.** If a user reports high sensitivity to context switching, a policy is created: "insert 15-min buffer after every meeting."
+- **The existing `create_default_policies()` function is refactored** to accept a `RoleProfile` + questionnaire answers instead of raw answer dict.
+- **`notification_preference`** (from the old questionnaire) is preserved as a 7th belief parameter: `guidance_level`. Encoded as 0-1 scale (minimal=0.2, balanced=0.5, involved=0.8). This controls how aggressively the system prompts for energy self-reports and surfaces explanations. Default per role: Student=0.5, Professional=0.5, Freelancer=0.3, Manager=0.3, Creative=0.5.
+
+### 5.7 Block Status Lifecycle
+
+The `ScheduledBlockORM.status` field uses a String enum with these values:
+
+| Status | Meaning | Default? |
+|--------|---------|----------|
+| `scheduled` | Block created, not yet reached | Yes (default) |
+| `in_progress` | Current time is within block window | |
+| `completed` | User marked done or block time passed + completion inferred | |
+| `skipped` | User explicitly skipped or block time passed with no activity | |
+| `partial` | User started but ended early | |
+| `rescheduled` | User moved this block to a different time | |
+
+Transition: `scheduled` → `in_progress` → `completed`/`skipped`/`partial`. `rescheduled` can happen from `scheduled` or `in_progress`.
+
+### 5.8 BehavioralTracker Hook Points
+
+Where tracking code is inserted in existing files:
+
+| Signal | Hook location | Trigger |
+|--------|--------------|---------|
+| Block completion | `backend/app/api/adjust.py` — new `PATCH /api/blocks/{id}/status` endpoint | User marks block done/skipped/partial |
+| Block auto-completion | `backend/app/services/schedule_generator.py` — end-of-block check | Block end time passes |
+| Reschedule | `backend/app/api/adjust.py` — existing adjustment endpoint | User moves a block, log original + new time |
+| Self-scheduling | `backend/app/api/intents.py` — after intent resolution creates a block | User adds a new task freely |
+| Energy self-report | New `POST /api/self-report/energy` endpoint | Frontend prompts after deep work blocks |
+
+### 5.9 Weekly Check-in Scheduling
+
+**Mechanism:** Client-side timer, not server cron.
+
+- Frontend stores the user's preferred check-in day/time (default: Sunday 7pm)
+- When the app is opened and the check-in is due (current time > last_checkin + 7 days), frontend calls `GET /api/checkin/next`
+- Backend picks the lowest-confidence parameter, generates the question, returns it
+- Frontend displays the card overlay
+- User answer goes to `POST /api/checkin/answer`
+- If app isn't opened on Sunday, check-in triggers on next app open
+
+This avoids needing server-side cron or push notifications for v1.
+
+### 5.10 API Endpoints (New)
+
+| Method | Path | Purpose | Request | Response |
+|--------|------|---------|---------|----------|
+| POST | `/api/onboarding/role` | Submit role selection | `{ role: "student" }` | `{ beliefs: [...], next_question: {...} }` |
+| POST | `/api/onboarding/questionnaire` | Submit questionnaire answer | `{ question_id: str, answer: str }` | `{ next_question: {...} \| null, summary: str \| null }` |
+| GET | `/api/beliefs` | Get current beliefs for user | — | `{ beliefs: [{ parameter, value, confidence }] }` |
+| PATCH | `/api/blocks/{id}/status` | Update block status | `{ status: "completed" }` | `{ updated: true }` |
+| POST | `/api/self-report/energy` | Submit energy self-report | `{ level: "low"\|"ok"\|"great", block_id: uuid }` | `{ recorded: true }` |
+| GET | `/api/checkin/next` | Get weekly check-in question | — | `{ question: str, options: [...], parameter: str } \| { skip: true, message: str }` |
+| POST | `/api/checkin/answer` | Submit check-in answer | `{ parameter: str, answer: str }` | `{ updated: true }` |
+
+### 5.11 UserProfile Relationship
+
+The existing `UserProfile` dataclass (wake_time, sleep_time, work_start, work_end, peak_energy_start, peak_energy_end) is **kept** for time-of-day scheduling boundaries. The `peak_energy_start` and `peak_energy_end` fields are initialized from the `peak_energy` belief (belief_value ± 1.5 hours) and updated whenever the belief updates. UserProfile holds resolved scheduling windows; UserBelief holds the learning state.
+
+### 5.12 Untouched Components
+
+- Safety policies — still act as guardrails regardless of beliefs (initial policies now generated from role profile)
 - Intent parsing (IHF 2.0) — unchanged
 - Timeline/undo system — unchanged
 - Question policy (VOI/COI) — unchanged
@@ -275,3 +416,5 @@ Role Selection
 | User never completes blocks (no signal) | Skips are signals too — system learns from what's avoided, not just what's completed. |
 | All confidence scores plateau at ~0.6 | Inconsistent behavior. System keeps asking weekly, schedules conservatively using safety policies. |
 | User dismisses every check-in | Confidence decays slowly. System relies on behavioral signals only. Still adapts, just slower. |
+| User closes app after a block (no next block observed) | Recovery rate gets no signal — confidence decays naturally. Only measured when user starts a new block within 4 hours of completing one. |
+| peak_energy belief oscillates (morning one week, evening next) | Confidence stays low (~0.4-0.5), system hedges by spreading deep work across both windows. |
