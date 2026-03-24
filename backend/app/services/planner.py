@@ -10,12 +10,13 @@ Responsibilities:
 """
 from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Literal, Optional
 from uuid import UUID, uuid4
 
 from app.models.intent import IntentHypothesis, ActivityNature, EnergyLevel
 from app.models.human_state import HumanState
 from app.models.safety_policy import SafetyPolicy
+from app.models.scheduling_context import SchedulingContext
 from app.models.timeline import ScheduledBlock, CandidateTimeline, StateCheckpoint
 from app.models.planner import PlannerExplanation, PlannerResult
 
@@ -80,19 +81,36 @@ def generate_candidate_slots(
     day_start: datetime,
     day_end: datetime,
     num_candidates: int = 5,
+    scheduling_context: Optional[SchedulingContext] = None,
 ) -> list[tuple[datetime, datetime]]:
     """
     Generate candidate time slots for scheduling.
-    
+
     Strategy:
     1. Find all free windows
     2. Prefer windows that match preferred time of day
     3. Prefer windows with natural buffer space
+
+    If scheduling_context is provided:
+    - Cap block duration to max_block_duration_minutes
+    - Use min_buffer_minutes for buffer between blocks
+    - Bias candidate ordering toward peak energy window
     """
-    duration = timedelta(minutes=hypothesis.duration_estimate_minutes)
+    # Cap duration if scheduling_context constrains it
+    raw_minutes = hypothesis.duration_estimate_minutes
+    if scheduling_context and scheduling_context.max_block_duration_minutes:
+        raw_minutes = min(raw_minutes, scheduling_context.max_block_duration_minutes)
+    duration = timedelta(minutes=raw_minutes)
+
     impact = ACTIVITY_IMPACTS.get(hypothesis.activity_nature, ACTIVITY_IMPACTS[ActivityNature.SHALLOW_WORK])
-    buffer_before = timedelta(minutes=impact["ramp_up"])
-    buffer_after = timedelta(minutes=impact["cool_down"])
+
+    # Use scheduling_context min_buffer_minutes if provided, else activity defaults
+    if scheduling_context and scheduling_context.min_buffer_minutes:
+        buffer_before = timedelta(minutes=max(impact["ramp_up"], scheduling_context.min_buffer_minutes))
+        buffer_after = timedelta(minutes=max(impact["cool_down"], scheduling_context.min_buffer_minutes))
+    else:
+        buffer_before = timedelta(minutes=impact["ramp_up"])
+        buffer_after = timedelta(minutes=impact["cool_down"])
     total_needed = buffer_before + duration + buffer_after
 
     # Sort existing blocks by start time
@@ -149,6 +167,20 @@ def generate_candidate_slots(
         if key not in seen:
             seen.add(key)
             unique_candidates.append(c)
+
+    # Bias ordering toward peak energy window when scheduling_context provided
+    if scheduling_context:
+        peak_start_hour = scheduling_context.peak_energy_start
+        peak_end_hour = scheduling_context.peak_energy_end
+
+        def _peak_distance(slot: tuple[datetime, datetime]) -> float:
+            """Lower is better: 0 if slot starts inside peak window."""
+            slot_hour = slot[0].hour + slot[0].minute / 60.0
+            if peak_start_hour <= slot_hour <= peak_end_hour:
+                return 0.0
+            return min(abs(slot_hour - peak_start_hour), abs(slot_hour - peak_end_hour))
+
+        unique_candidates.sort(key=_peak_distance)
 
     return unique_candidates[:num_candidates]
 
@@ -378,11 +410,17 @@ async def plan(
     existing_blocks: list[ScheduledBlock],
     policies: list[SafetyPolicy],
     target_date: datetime | None = None,
+    scheduling_context: Optional[SchedulingContext] = None,
 ) -> PlannerResult:
     """
     Main planner entry point.
-    
+
     Generates candidates, simulates each, scores them, and selects the best.
+
+    If scheduling_context is provided its values override defaults:
+    - peak_energy_start / peak_energy_end bias candidate generation
+    - max_block_duration_minutes caps block duration
+    - min_buffer_minutes sets minimum buffer between blocks
     """
     now = datetime.now()
     target_date = target_date or now
@@ -402,6 +440,7 @@ async def plan(
         day_start=day_start,
         day_end=day_end,
         num_candidates=5,
+        scheduling_context=scheduling_context,
     )
 
     if not slots:
@@ -423,6 +462,14 @@ async def plan(
     impact = ACTIVITY_IMPACTS.get(hypothesis.activity_nature, ACTIVITY_IMPACTS[ActivityNature.SHALLOW_WORK])
 
     for start_time, end_time in slots:
+        # Derive buffer values, respecting scheduling_context overrides
+        if scheduling_context and scheduling_context.min_buffer_minutes:
+            buf_before = max(impact["ramp_up"], scheduling_context.min_buffer_minutes)
+            buf_after = max(impact["cool_down"], scheduling_context.min_buffer_minutes)
+        else:
+            buf_before = impact["ramp_up"]
+            buf_after = impact["cool_down"]
+
         # Create scheduled block
         block = ScheduledBlock(
             id=uuid4(),
@@ -432,8 +479,8 @@ async def plan(
             end_time=end_time,
             goal=hypothesis.goal,
             activity_nature=hypothesis.activity_nature.value,
-            buffer_before_minutes=impact["ramp_up"],
-            buffer_after_minutes=impact["cool_down"],
+            buffer_before_minutes=buf_before,
+            buffer_after_minutes=buf_after,
             is_locked=False,
         )
 
