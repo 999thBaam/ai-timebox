@@ -171,3 +171,68 @@ class TestProcessEnergyReport:
 
         # 'ok' = 0.6, which is < 0.7, so no update
         assert result[BeliefParameter.PEAK_ENERGY].belief_value == 22.0
+
+
+class TestContextSwitchCost:
+    """Test context switch cost updates from back-to-back blocks."""
+
+    def test_context_switch_cost_from_back_to_back(self) -> None:
+        """Back-to-back completed block = low switch cost signal."""
+        updater = BeliefUpdater()
+        beliefs = _make_beliefs()
+        updated = updater.process_block_completion(
+            beliefs=beliefs,
+            block_start_hour=14.0,
+            block_duration_minutes=45,
+            status="completed",
+            minutes_since_last_block=5,
+        )
+        assert updated[BeliefParameter.CONTEXT_SWITCH_COST].belief_value < 0.7
+
+
+class TestChaosTolerance:
+    """Test chaos tolerance updates from disruption responses."""
+
+    def test_chaos_tolerance_from_disruption(self) -> None:
+        updater = BeliefUpdater()
+        beliefs = _make_beliefs()
+        updated = updater.process_disruption_response(
+            beliefs=beliefs, response="rescheduled"
+        )
+        assert updated[BeliefParameter.CHAOS_TOLERANCE].belief_value < 0.4
+
+
+class TestMeetingTolerance:
+    """Test meeting tolerance updates from meeting-adjacent skips."""
+
+    def test_meeting_tolerance_skip_adjacent(self) -> None:
+        updater = BeliefUpdater()
+        beliefs = _make_beliefs()
+        updated = updater.process_block_completion(
+            beliefs=beliefs,
+            block_start_hour=14.0,
+            block_duration_minutes=30,
+            status="skipped",
+            is_meeting_adjacent=True,
+        )
+        assert updated[BeliefParameter.MEETING_TOLERANCE].belief_value < 0.3
+
+
+class TestRecoveryRate:
+    """Test recovery rate updates from gap signals."""
+
+    def test_recovery_rate_from_gap(self) -> None:
+        updater = BeliefUpdater()
+        beliefs = _make_beliefs()
+        updated = updater.process_recovery_signal(
+            beliefs=beliefs, gap_hours=1.0
+        )
+        assert updated[BeliefParameter.RECOVERY_RATE].evidence_count == 1
+
+    def test_recovery_rate_ignores_long_gaps(self) -> None:
+        updater = BeliefUpdater()
+        beliefs = _make_beliefs()
+        updated = updater.process_recovery_signal(
+            beliefs=beliefs, gap_hours=5.0
+        )
+        assert updated[BeliefParameter.RECOVERY_RATE].evidence_count == 0
