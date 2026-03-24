@@ -6,7 +6,7 @@
 
 **Architecture:** New belief system (7 parameters with confidence scores) sits between user input and the planner. Role profiles seed initial beliefs, adaptive questionnaire fine-tunes them, behavioral tracking continuously updates them, and weekly check-ins target the least confident parameter. Beliefs resolve into a SchedulingContext that the existing planner consumes.
 
-**Tech Stack:** Python 3.11+, FastAPI, SQLAlchemy 2.0, Pydantic 2.5, pytest, Next.js 16, React 19, TypeScript
+**Tech Stack:** Python 3.9+ (with `from __future__ import annotations`), FastAPI, SQLAlchemy 2.0, Pydantic 2.5, pytest, Next.js 16, React 19, TypeScript
 
 **Spec:** `docs/superpowers/specs/2026-03-24-role-based-questionnaire-design.md`
 
@@ -2195,14 +2195,626 @@ git commit -m "feat: add behavioral tracking hooks to intent parsing and schedul
 
 ---
 
-## Task 16: Run Full Test Suite + Final Verification
+## Task 16: Shared Belief Store + Complete API Endpoint Wiring
+
+**Problem:** Tasks 9-10 created isolated in-memory belief stores. Beliefs from onboarding are invisible to check-in and beliefs endpoints. API endpoints have TODO stubs instead of real tracking integration.
+
+**Files:**
+- Create: `backend/app/services/belief_store.py`
+- Modify: `backend/app/api/beliefs.py`
+- Modify: `backend/app/api/checkin.py`
+- Modify: `backend/app/api/blocks.py`
+- Modify: `backend/app/api/self_report.py`
+- Modify: `backend/app/api/onboarding.py`
+
+- [ ] **Step 1: Create shared in-memory belief store (MVP — DB later)**
+
+```python
+# backend/app/services/belief_store.py
+from __future__ import annotations
+
+from app.models.role_profile import BeliefParameter
+from app.models.user_belief import UserBelief
+
+# Shared in-memory store for MVP — replace with DB queries in production
+_beliefs: dict[str, dict[BeliefParameter, UserBelief]] = {}
+
+DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+def get_beliefs(user_id: str = DEFAULT_USER_ID) -> dict[BeliefParameter, UserBelief] | None:
+    return _beliefs.get(user_id)
+
+
+def set_beliefs(beliefs: dict[BeliefParameter, UserBelief], user_id: str = DEFAULT_USER_ID) -> None:
+    _beliefs[user_id] = beliefs
+
+
+def update_beliefs(updated: dict[BeliefParameter, UserBelief], user_id: str = DEFAULT_USER_ID) -> None:
+    existing = _beliefs.get(user_id, {})
+    existing.update(updated)
+    _beliefs[user_id] = existing
+```
+
+- [ ] **Step 2: Wire onboarding questionnaire to store beliefs on completion**
+
+In `backend/app/api/onboarding.py`, in the `submit_questionnaire_answer` endpoint, after `beliefs = aq.get_beliefs()`, add:
+
+```python
+from app.services.belief_store import set_beliefs
+# After beliefs = aq.get_beliefs():
+set_beliefs(beliefs)
+```
+
+- [ ] **Step 3: Wire beliefs.py to read from shared store**
+
+Replace the isolated `_user_beliefs` dict in `backend/app/api/beliefs.py` with:
+
+```python
+from app.services.belief_store import get_beliefs as get_stored_beliefs
+
+@router.get("")
+async def get_beliefs():
+    beliefs = get_stored_beliefs() or {}
+    return {
+        "beliefs": [
+            {"parameter": p.value, "value": b.belief_value, "confidence": b.confidence}
+            for p, b in beliefs.items()
+        ]
+    }
+```
+
+- [ ] **Step 4: Wire blocks.py to trigger BehavioralTracker**
+
+Replace TODO in `backend/app/api/blocks.py`:
+
+```python
+from app.services.belief_store import get_beliefs, update_beliefs
+from app.services.behavioral_tracker import BehavioralTracker
+
+_tracker = BehavioralTracker()
+
+@router.patch("/{block_id}/status")
+async def update_block_status(block_id: str, request: Request):
+    body = await request.json()
+    new_status = body.get("status")
+    valid = {"completed", "skipped", "partial", "rescheduled", "in_progress"}
+    if new_status not in valid:
+        return JSONResponse(status_code=400, content={"error": f"Invalid status: {new_status}"})
+
+    # TODO MVP: look up block start_hour and duration from DB
+    # For now, accept them in the request body
+    block_start_hour = body.get("block_start_hour", 12.0)
+    block_duration_minutes = body.get("block_duration_minutes", 45.0)
+
+    beliefs = get_beliefs()
+    if beliefs and new_status in ("completed", "skipped", "partial"):
+        updated = _tracker.on_block_status_change(beliefs, block_start_hour, block_duration_minutes, new_status)
+        update_beliefs(updated)
+
+    return {"updated": True, "block_id": block_id, "status": new_status}
+```
+
+- [ ] **Step 5: Wire self_report.py to trigger BehavioralTracker**
+
+Replace TODO in `backend/app/api/self_report.py`:
+
+```python
+from datetime import datetime
+from app.services.belief_store import get_beliefs, update_beliefs
+from app.services.behavioral_tracker import BehavioralTracker
+
+_tracker = BehavioralTracker()
+
+@router.post("/energy")
+async def submit_energy_report(request: Request):
+    body = await request.json()
+    level = body.get("level")
+    if level not in ("low", "ok", "great"):
+        return JSONResponse(status_code=400, content={"error": f"Invalid level: {level}"})
+
+    current_hour = datetime.now().hour + datetime.now().minute / 60.0
+    beliefs = get_beliefs()
+    if beliefs:
+        updated = _tracker.on_energy_report(beliefs, current_hour, level)
+        update_beliefs(updated)
+
+    return {"recorded": True, "level": level}
+```
+
+- [ ] **Step 6: Wire checkin.py to read/write shared store**
+
+Replace isolated store in `backend/app/api/checkin.py`:
+
+```python
+from app.services.belief_store import get_beliefs, update_beliefs
+from app.services.belief_updater import SignalType
+
+@router.get("/next")
+async def get_next_checkin():
+    beliefs = get_beliefs()
+    if not beliefs:
+        return {"skip": True, "message": "No profile set up yet."}
+    result = _checkin_generator.generate(beliefs, week_data={})
+    return result
+
+@router.post("/answer")
+async def submit_checkin_answer(request: Request):
+    body = await request.json()
+    parameter = body.get("parameter")
+    answer = body.get("answer")
+
+    beliefs = get_beliefs()
+    if not beliefs:
+        return JSONResponse(status_code=404, content={"error": "No beliefs found"})
+
+    # Decode answer using template encoding
+    from app.services.checkin_generator import QUESTION_TEMPLATES
+    param_enum = BeliefParameter(parameter)
+    template = QUESTION_TEMPLATES.get(param_enum)
+    if template and answer in template["encoding"]:
+        encoded = template["encoding"][answer]
+        if param_enum == BeliefParameter.DEEP_WORK_TOLERANCE:
+            # Multiplier: adjust current belief
+            encoded = beliefs[param_enum].belief_value * encoded
+        belief = beliefs[param_enum].update(encoded, SignalType.ENERGY_SELF_REPORT.weight)
+        update_beliefs({param_enum: belief})
+
+    return {"updated": True, "parameter": parameter}
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd "/Users/amitbagra/Desktop/AI timeboxing"
+git add backend/app/services/belief_store.py backend/app/api/beliefs.py backend/app/api/checkin.py backend/app/api/blocks.py backend/app/api/self_report.py backend/app/api/onboarding.py
+git commit -m "feat: wire all API endpoints to shared belief store with real tracking integration"
+```
+
+---
+
+## Task 17: Extend BeliefUpdater for All 7 Parameters
+
+**Problem:** BeliefUpdater only updates `peak_energy` and `deep_work_tolerance`. The spec requires all 7 parameters to receive behavioral updates.
+
+**Files:**
+- Modify: `backend/app/services/belief_updater.py`
+- Modify: `backend/tests/test_belief_updater.py`
+
+- [ ] **Step 1: Add failing tests for missing parameter updates**
+
+Add to `backend/tests/test_belief_updater.py`:
+
+```python
+def test_context_switch_cost_from_back_to_back():
+    """Completing a block right after another = low context switch cost signal."""
+    updater = BeliefUpdater()
+    beliefs = _make_beliefs()
+    updated = updater.process_block_completion(
+        beliefs=beliefs,
+        block_start_hour=14.0,
+        block_duration_minutes=45.0,
+        status="completed",
+        minutes_since_last_block=5,  # back-to-back
+    )
+    # Completed back-to-back → low switch cost observation
+    assert updated[BeliefParameter.CONTEXT_SWITCH_COST].belief_value < 0.7
+
+
+def test_context_switch_cost_from_buffered():
+    updater = BeliefUpdater()
+    beliefs = _make_beliefs()
+    updated = updater.process_block_completion(
+        beliefs=beliefs,
+        block_start_hour=14.0,
+        block_duration_minutes=45.0,
+        status="completed",
+        minutes_since_last_block=60,  # long buffer
+    )
+    # No signal for context_switch_cost when well-buffered (doesn't decrease)
+    assert updated[BeliefParameter.CONTEXT_SWITCH_COST].belief_value >= 0.65
+
+
+def test_chaos_tolerance_from_disruption():
+    updater = BeliefUpdater()
+    beliefs = _make_beliefs()
+    updated = updater.process_disruption_response(
+        beliefs=beliefs,
+        response="rescheduled",  # user reworked their schedule
+    )
+    # Rescheduling after disruption = lower chaos tolerance
+    assert updated[BeliefParameter.CHAOS_TOLERANCE].belief_value < 0.4
+
+
+def test_meeting_tolerance_after_meeting():
+    updater = BeliefUpdater()
+    beliefs = _make_beliefs()
+    updated = updater.process_block_completion(
+        beliefs=beliefs,
+        block_start_hour=14.0,
+        block_duration_minutes=30.0,
+        status="skipped",
+        is_meeting_adjacent=True,
+    )
+    # Skipping a meeting-adjacent block = lower meeting tolerance
+    assert updated[BeliefParameter.MEETING_TOLERANCE].belief_value < 0.3
+
+
+def test_recovery_rate_from_gap():
+    updater = BeliefUpdater()
+    beliefs = _make_beliefs()
+    updated = updater.process_recovery_signal(
+        beliefs=beliefs,
+        gap_hours=1.0,  # 1 hour between blocks
+    )
+    assert updated[BeliefParameter.RECOVERY_RATE].evidence_count == 1
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd "/Users/amitbagra/Desktop/AI timeboxing/backend" && python -m pytest tests/test_belief_updater.py -v`
+Expected: FAIL — new test methods reference non-existent parameters/methods
+
+- [ ] **Step 3: Extend BeliefUpdater implementation**
+
+Add to `backend/app/services/belief_updater.py`:
+
+```python
+def process_block_completion(
+    self,
+    beliefs: dict[BeliefParameter, UserBelief],
+    block_start_hour: float,
+    block_duration_minutes: float,
+    status: str,
+    minutes_since_last_block: float | None = None,
+    is_meeting_adjacent: bool = False,
+) -> dict[BeliefParameter, UserBelief]:
+    updated = dict(beliefs)
+    w = SignalType.BLOCK_COMPLETION.weight
+
+    # ... existing peak_energy and deep_work_tolerance logic ...
+
+    # Context switch cost: if completed back-to-back, low cost signal
+    if minutes_since_last_block is not None and status == "completed":
+        if minutes_since_last_block < 15:
+            switch_obs = max(beliefs[BeliefParameter.CONTEXT_SWITCH_COST].belief_value - 0.15, 0.0)
+            updated[BeliefParameter.CONTEXT_SWITCH_COST] = beliefs[BeliefParameter.CONTEXT_SWITCH_COST].update(switch_obs, w)
+
+    # Meeting tolerance: skipping meeting-adjacent blocks = lower tolerance
+    if is_meeting_adjacent and status == "skipped":
+        meet_obs = max(beliefs[BeliefParameter.MEETING_TOLERANCE].belief_value - 0.15, 0.0)
+        updated[BeliefParameter.MEETING_TOLERANCE] = beliefs[BeliefParameter.MEETING_TOLERANCE].update(meet_obs, w)
+
+    return updated
+
+
+def process_disruption_response(
+    self,
+    beliefs: dict[BeliefParameter, UserBelief],
+    response: str,
+) -> dict[BeliefParameter, UserBelief]:
+    updated = dict(beliefs)
+    w = SignalType.RESCHEDULE.weight
+    mapping = {"rescheduled": 0.2, "pushed_through": 0.8, "cancelled": 0.1}
+    obs = mapping.get(response, 0.5)
+    updated[BeliefParameter.CHAOS_TOLERANCE] = beliefs[BeliefParameter.CHAOS_TOLERANCE].update(obs, w)
+    return updated
+
+
+def process_recovery_signal(
+    self,
+    beliefs: dict[BeliefParameter, UserBelief],
+    gap_hours: float,
+) -> dict[BeliefParameter, UserBelief]:
+    if gap_hours > 4.0:
+        return beliefs  # Too long — not a recovery signal
+    updated = dict(beliefs)
+    # Shorter gap = faster recovery rate
+    recovery_obs = min(0.20, 1.0 / max(gap_hours, 0.25) * 0.05)
+    updated[BeliefParameter.RECOVERY_RATE] = beliefs[BeliefParameter.RECOVERY_RATE].update(
+        recovery_obs, SignalType.BLOCK_COMPLETION.weight
+    )
+    return updated
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd "/Users/amitbagra/Desktop/AI timeboxing/backend" && python -m pytest tests/test_belief_updater.py -v`
+Expected: All tests PASS (old + new)
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "/Users/amitbagra/Desktop/AI timeboxing"
+git add backend/app/services/belief_updater.py backend/tests/test_belief_updater.py
+git commit -m "feat: extend BeliefUpdater to update all 7 parameters from behavioral signals"
+```
+
+---
+
+## Task 18: Planner + ScheduleGenerator Integration with SchedulingContext
+
+**Problem:** Beliefs are created and updated but never feed into scheduling decisions. This is the critical missing link.
+
+**Files:**
+- Modify: `backend/app/services/planner.py:374-508`
+- Modify: `backend/app/services/schedule_generator.py:69-200`
+- Test: `backend/tests/test_scheduling_context.py` (add integration test)
+
+- [ ] **Step 1: Add integration test**
+
+Add to `backend/tests/test_scheduling_context.py`:
+
+```python
+def test_resolve_wrapping_peak_energy():
+    """Peak at 23.5 should produce window 22.0 - 1.0 (wraps around midnight)."""
+    beliefs = _make_beliefs(**{BeliefParameter.PEAK_ENERGY: 23.5})
+    ctx = resolve_beliefs(beliefs)
+    assert ctx.peak_energy_start == 22.0
+    assert ctx.peak_energy_end == 25.0  # Planner handles mod 24 when comparing
+```
+
+- [ ] **Step 2: Modify planner.py to accept SchedulingContext**
+
+In `backend/app/services/planner.py`, modify the `plan()` function (line 374) to accept an optional `SchedulingContext` parameter and use it when generating candidates:
+
+```python
+# At top of planner.py, add import:
+from app.models.scheduling_context import SchedulingContext
+
+# In plan() function signature, add optional parameter:
+async def plan(
+    intent: IntentHypothesis,
+    current_state: HumanState,
+    existing_blocks: list,
+    policies: list,
+    scheduling_context: SchedulingContext | None = None,
+) -> PlannerResult:
+```
+
+In `generate_candidate_slots()` (line 77), use `scheduling_context.peak_energy_start/end` to bias candidate slot generation toward the user's peak energy window when available. Use `scheduling_context.max_block_duration_minutes` to cap block duration.
+
+- [ ] **Step 3: Modify schedule_generator.py to accept SchedulingContext**
+
+In `backend/app/services/schedule_generator.py`, modify `ScheduleGenerator.generate()` (line 69) to accept optional `SchedulingContext`:
+
+```python
+from app.models.scheduling_context import SchedulingContext
+
+def generate(
+    self,
+    profile: UserProfile,
+    tasks: list,
+    scheduling_context: SchedulingContext | None = None,
+) -> GeneratedSchedule:
+```
+
+Use `scheduling_context.max_block_duration_minutes` to override default block sizes and `scheduling_context.min_buffer_minutes` to set buffer durations between blocks. Use `scheduling_context.peak_energy_start/end` to override `profile.peak_energy_start/end`.
+
+- [ ] **Step 4: Run tests**
+
+Run: `cd "/Users/amitbagra/Desktop/AI timeboxing/backend" && python -m pytest tests/ -v`
+Expected: All tests pass
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "/Users/amitbagra/Desktop/AI timeboxing"
+git add backend/app/services/planner.py backend/app/services/schedule_generator.py backend/tests/test_scheduling_context.py
+git commit -m "feat: integrate SchedulingContext into planner and schedule generator"
+```
+
+---
+
+## Task 19: Remove Old Questionnaire + Register Routers Correctly
+
+**Problem:** Old `questionnaire.py` and its endpoints coexist with new system. New routers bypass the existing `api/__init__.py` aggregation pattern.
+
+**Files:**
+- Modify: `backend/app/api/__init__.py`
+- Modify: `backend/app/main.py`
+- Modify: `backend/app/api/onboarding.py`
+
+- [ ] **Step 1: Read existing api/__init__.py to understand router pattern**
+
+Read `backend/app/api/__init__.py` and understand how routers are currently aggregated.
+
+- [ ] **Step 2: Add new routers to api/__init__.py following existing pattern**
+
+Add to `backend/app/api/__init__.py`:
+```python
+from app.api.blocks import router as blocks_router
+from app.api.self_report import router as self_report_router
+from app.api.checkin import router as checkin_router
+from app.api.beliefs import router as beliefs_router
+
+api_router.include_router(blocks_router)
+api_router.include_router(self_report_router)
+api_router.include_router(checkin_router)
+api_router.include_router(beliefs_router)
+```
+
+Update the new router files to use relative prefixes (e.g., `/blocks` instead of `/api/blocks`) since the parent router adds `/api`.
+
+- [ ] **Step 3: Remove direct router registration from main.py**
+
+Remove the 4 direct `app.include_router()` calls added in Task 10 Step 5 from `main.py`.
+
+- [ ] **Step 4: Remove old questionnaire endpoints from onboarding.py**
+
+In `backend/app/api/onboarding.py`, remove or comment out:
+- The `GET /questions` endpoint (lines 36-55) — replaced by role selection
+- The `POST /submit` endpoint (lines 83-107) — replaced by adaptive questionnaire
+
+Keep the conversational onboarding endpoints (`/session`, `/profile`, `/theme`, `/chat`, `/generate`) as they're still used in phases 3-5.
+
+- [ ] **Step 5: Fix duplicate generate_schedule endpoint**
+
+The existing `onboarding.py` has `generate_schedule` defined at both line 169 and line 266. Remove the duplicate.
+
+- [ ] **Step 6: Verify server starts**
+
+Run: `cd "/Users/amitbagra/Desktop/AI timeboxing/backend" && python -c "from app.main import app; print('OK')"`
+Expected: `OK` — no duplicate route errors
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd "/Users/amitbagra/Desktop/AI timeboxing"
+git add backend/app/api/__init__.py backend/app/main.py backend/app/api/onboarding.py backend/app/api/blocks.py backend/app/api/self_report.py backend/app/api/checkin.py backend/app/api/beliefs.py
+git commit -m "refactor: register routers via api/__init__.py, remove old questionnaire endpoints"
+```
+
+---
+
+## Task 20: Safety Policy Migration
+
+**Problem:** The existing `create_default_policies()` in `questionnaire.py` generates SafetyPolicy objects from onboarding answers. The new system needs to generate them from RoleProfile instead.
+
+**Files:**
+- Modify: `backend/app/services/adaptive_questionnaire.py`
+- Modify: `backend/app/services/questionnaire.py`
+
+- [ ] **Step 1: Add policy generation to AdaptiveQuestionnaire**
+
+Add method to `AdaptiveQuestionnaire` class in `adaptive_questionnaire.py`:
+
+```python
+from app.models.safety_policy import SafetyPolicy, ActivationCondition, DecayCurve, PolicySource
+
+def get_policies(self) -> list[SafetyPolicy]:
+    """Generate initial safety policies from role profile + questionnaire answers."""
+    policies = []
+    for policy_def in self.profile.default_policies:
+        policies.append(SafetyPolicy(
+            name=policy_def["description"],
+            activation=ActivationCondition(
+                parameter="custom",
+                operator="custom",
+                threshold=0.0,
+                description=policy_def["condition"],
+            ),
+            action=policy_def["action"],
+            decay=DecayCurve.LINEAR,
+            source=PolicySource.QUESTIONNAIRE,
+        ))
+
+    # Add context-switch buffer policy if high switch cost
+    beliefs = self.get_beliefs()
+    if beliefs[BeliefParameter.CONTEXT_SWITCH_COST].belief_value > 0.6:
+        policies.append(SafetyPolicy(
+            name="Insert buffer after context switch",
+            activation=ActivationCondition(
+                parameter="context_switch",
+                operator="==",
+                threshold=1.0,
+                description="context_switch = true",
+            ),
+            action="insert_buffer_15min",
+            decay=DecayCurve.LINEAR,
+            source=PolicySource.QUESTIONNAIRE,
+        ))
+
+    return policies
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd "/Users/amitbagra/Desktop/AI timeboxing"
+git add backend/app/services/adaptive_questionnaire.py
+git commit -m "feat: add safety policy generation from role profiles and questionnaire answers"
+```
+
+---
+
+## Task 21: Frontend — Check-in + Energy Report Integration in Main Page
+
+**Problem:** CheckInCard and EnergyReport components exist but are never rendered or triggered.
+
+**Files:**
+- Modify: `frontend/src/app/page.tsx`
+- Modify: `frontend/src/lib/api.ts`
+
+- [ ] **Step 1: Add check-in and energy report logic to main page**
+
+In `frontend/src/app/page.tsx`, add:
+
+```tsx
+import { useState, useEffect } from 'react';
+import CheckInCard from '@/components/CheckInCard';
+import EnergyReport from '@/components/EnergyReport';
+import { getCheckIn, submitCheckIn, submitEnergyReport } from '@/lib/api';
+
+// Inside the main page component, add state:
+const [checkIn, setCheckIn] = useState<any>(null);
+const [energyPrompt, setEnergyPrompt] = useState<{blockId: string} | null>(null);
+
+// On mount, check if weekly check-in is due:
+useEffect(() => {
+  const lastCheckIn = localStorage.getItem('lastCheckIn');
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  if (!lastCheckIn || parseInt(lastCheckIn) < weekAgo) {
+    getCheckIn().then(data => {
+      if (!data.skip) setCheckIn(data);
+    });
+  }
+}, []);
+
+// Handlers:
+const handleCheckInAnswer = async (parameter: string, answer: string) => {
+  await submitCheckIn(parameter, answer);
+  localStorage.setItem('lastCheckIn', Date.now().toString());
+  setCheckIn(null);
+};
+
+const handleCheckInDismiss = () => {
+  localStorage.setItem('lastCheckIn', Date.now().toString());
+  setCheckIn(null);
+};
+
+const handleEnergyReport = async (blockId: string, level: string) => {
+  await submitEnergyReport(blockId, level);
+  setEnergyPrompt(null);
+};
+
+// In render, add:
+{checkIn && (
+  <CheckInCard
+    question={checkIn.question}
+    options={checkIn.options}
+    parameter={checkIn.parameter}
+    onAnswer={handleCheckInAnswer}
+    onDismiss={handleCheckInDismiss}
+  />
+)}
+{energyPrompt && (
+  <EnergyReport
+    blockId={energyPrompt.blockId}
+    onReport={handleEnergyReport}
+    onDismiss={() => setEnergyPrompt(null)}
+  />
+)}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd "/Users/amitbagra/Desktop/AI timeboxing"
+git add frontend/src/app/page.tsx
+git commit -m "feat: integrate CheckInCard and EnergyReport into main page with trigger logic"
+```
+
+---
+
+## Task 22: Run Full Test Suite + Final Verification
 
 **Files:** None new — verification only.
 
 - [ ] **Step 1: Run all backend tests**
 
 Run: `cd "/Users/amitbagra/Desktop/AI timeboxing/backend" && python -m pytest tests/ -v`
-Expected: All tests pass (35+ tests across 8 test files)
+Expected: All tests pass (45+ tests across 8 test files)
 
 - [ ] **Step 2: Verify backend starts without errors**
 
