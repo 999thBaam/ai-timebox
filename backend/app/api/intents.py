@@ -19,6 +19,9 @@ from app.services import (
     evaluate_question_policy,
     plan,
 )
+from app.services.behavioral_tracker import BehavioralTracker
+from app.services.belief_store import get_beliefs, update_beliefs
+_tracker = BehavioralTracker()
 
 router = APIRouter()
 

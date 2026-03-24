@@ -326,6 +326,9 @@ async def submit_questionnaire_answer(request: Request):
     result = aq.submit_answer(question_id, answer)
     next_q = aq.get_next_question()
     if next_q is None:
+        from app.services.belief_store import set_beliefs
+        beliefs = aq.get_beliefs()
+        set_beliefs(beliefs)
         summary = aq.get_summary()
         return {"next_question": None, "summary": summary, "beliefs_initialized": True}
     return {"next_question": next_q, "summary": None, "conflict": result["conflict"]}
