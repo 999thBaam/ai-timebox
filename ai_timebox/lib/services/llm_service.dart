@@ -130,6 +130,8 @@ Return a JSON object with:
   - "pillar": one of "work", "health", "errand", "social" or null
 - "insight": string (a short, warm, encouraging insight about today's plan)
 
+IMPORTANT: Only schedule tasks AFTER the current time. Never schedule in the past. If it's late in the day and there isn't enough time for all tasks, prioritize the most important ones and mark the rest as "open" slots for tomorrow.
+
 Be realistic about time. Include buffer slots between tasks. Add health nudges if health activity count is low. Be compassionate if tasks were rolled over.
 
 Respond ONLY with valid JSON.
@@ -148,7 +150,11 @@ Respond ONLY with valid JSON.
         ? 'None'
         : rolledTasks.map((t) => '"${t.title}"').join(', ');
 
+    final now = DateTime.now();
+    final currentTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
     final userMessage = '''
+Current time: $currentTime
 Day type: ${dayType.name}
 Wake time: $wakeTime
 Sleep time: $sleepTime
