@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/notification_service.dart';
 import 'storage/local_db.dart';
 import 'screens/setup_screen.dart';
 import 'screens/daily_screen.dart';
 import 'theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialise notifications
+  final notificationService = NotificationService();
+  await notificationService.init();
+
+  // Schedule default notifications on first launch
+  final prefs = await SharedPreferences.getInstance();
+  final notificationsScheduled =
+      prefs.getBool('notifications_scheduled') ?? false;
+  if (!notificationsScheduled) {
+    await notificationService.scheduleDefaults();
+    await prefs.setBool('notifications_scheduled', true);
+  }
+
   runApp(const AiTimeboxApp());
 }
 

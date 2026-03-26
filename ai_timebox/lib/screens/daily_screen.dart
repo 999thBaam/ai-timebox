@@ -20,6 +20,7 @@ import '../widgets/task_check_item.dart';
 import '../widgets/task_input.dart';
 import '../widgets/timeline_block.dart';
 import 'review_screen.dart';
+import 'settings_screen.dart';
 import 'week_screen.dart';
 
 // ---------------------------------------------------------------------------
@@ -313,6 +314,58 @@ class _DailyBodyState extends State<_DailyBody> {
 
   Future<void> _planMyDay() async {
     if (_planning || _tasks.isEmpty) return;
+
+    // Check if API key is set; prompt user if not
+    final apiKey = await _llmService.getApiKey();
+    final hasKey = apiKey != null && apiKey.isNotEmpty;
+
+    if (!hasKey && mounted) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppColors.glassBorder),
+          ),
+          title: const Text(
+            'No API Key',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: const Text(
+            'To generate smart schedules, enter your Claude API key in Settings. Or continue with offline mode.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('settings'),
+              child: const Text(
+                'Open Settings',
+                style: TextStyle(color: AppColors.workPrimary),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('offline'),
+              child: const Text(
+                'Use Offline Mode',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted) return;
+
+      if (choice == 'settings') {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        );
+        return; // Don't proceed; user can re-tap after setting key
+      }
+      // 'offline' or dismissed: fall through and use offline scheduler
+    }
+
     setState(() => _planning = true);
 
     try {
@@ -549,13 +602,21 @@ class _DailyBodyState extends State<_DailyBody> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _greeting(),
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _greeting(),
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  _buildSettingsGear(),
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -740,6 +801,8 @@ class _DailyBodyState extends State<_DailyBody> {
                   ),
                 ),
               ),
+              const SizedBox(width: 14),
+              _buildSettingsGear(),
             ],
           ),
         ),
@@ -874,6 +937,22 @@ class _DailyBodyState extends State<_DailyBody> {
           ],
         );
     }
+  }
+
+  Widget _buildSettingsGear() {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.only(top: 2),
+        child: Icon(
+          Icons.settings_outlined,
+          color: AppColors.textMuted,
+          size: 22,
+        ),
+      ),
+    );
   }
 
   Widget _buildConnector() {
