@@ -49,5 +49,11 @@
 	<string>AI Timebox uses the microphone to add tasks by voice</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>AI Timebox uses speech recognition to convert your voice to text</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AI Timebox uses the local network for development and debugging</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dartVmService._tcp</string>
+	</array>
 </dict>
 </plist>
