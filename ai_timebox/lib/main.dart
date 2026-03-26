@@ -6,10 +6,14 @@ import 'screens/setup_screen.dart';
 import 'screens/daily_screen.dart';
 import 'theme.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Show UI immediately — heavy init happens in background
+  runApp(const AiTimeboxApp());
+}
 
-  // Initialise notifications — wrapped in try-catch to prevent launch crash
+/// Runs notification setup in background after first frame renders.
+Future<void> _initNotifications() async {
   try {
     final notificationService = NotificationService();
     await notificationService.init();
@@ -24,8 +28,6 @@ void main() async {
   } catch (e) {
     debugPrint('Notification init failed: $e');
   }
-
-  runApp(const AiTimeboxApp());
 }
 
 class AiTimeboxApp extends StatelessWidget {
@@ -57,6 +59,8 @@ class _AppRouterState extends State<_AppRouter> {
   void initState() {
     super.initState();
     _hasConfigFuture = _checkWeekConfig();
+    // Init notifications in background — don't block UI
+    _initNotifications();
   }
 
   Future<bool> _checkWeekConfig() async {

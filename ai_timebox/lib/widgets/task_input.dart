@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 class TaskInput extends StatefulWidget {
@@ -18,18 +19,33 @@ class TaskInput extends StatefulWidget {
 
 class _TaskInputState extends State<TaskInput> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  bool _hasText = false;
 
   void _handleSubmit(String value) {
     final trimmed = value.trim();
     if (trimmed.isNotEmpty) {
       widget.onSubmit(trimmed);
       _controller.clear();
+      setState(() => _hasText = false);
+      // Keep keyboard open for rapid task entry
+      _focusNode.requestFocus();
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      final has = _controller.text.trim().isNotEmpty;
+      if (has != _hasText) setState(() => _hasText = has);
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -38,38 +54,43 @@ class _TaskInputState extends State<TaskInput> {
     return Row(
       children: [
         Expanded(
-          child: TextField(
+          child: CupertinoTextField(
             controller: _controller,
+            focusNode: _focusNode,
             onSubmitted: _handleSubmit,
+            textInputAction: TextInputAction.done,
+            keyboardAppearance: Brightness.dark,
+            autocorrect: true,
+            enableSuggestions: true,
+            placeholder: 'Add a task...',
+            placeholderStyle: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 15,
+            ),
             style: const TextStyle(
               color: Color(0xFFF1F5F9),
-              fontSize: 14,
+              fontSize: 15,
             ),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: const Color(0x0DFFFFFF),
-              hintText: 'Add a task...',
-              hintStyle: const TextStyle(color: Color(0xFF64748B)),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0x14FFFFFF)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0x14FFFFFF)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: Color(0xFF818CF8),
-                  width: 1.5,
-                ),
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0x0DFFFFFF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x14FFFFFF)),
             ),
+            cursorColor: const Color(0xFF818CF8),
+            suffix: _hasText
+                ? GestureDetector(
+                    onTap: () => _handleSubmit(_controller.text),
+                    child: const Padding(
+                      padding: EdgeInsets.only(right: 10),
+                      child: Icon(
+                        CupertinoIcons.arrow_up_circle_fill,
+                        color: Color(0xFF818CF8),
+                        size: 24,
+                      ),
+                    ),
+                  )
+                : null,
           ),
         ),
         if (widget.showMic) ...[
@@ -77,16 +98,16 @@ class _TaskInputState extends State<TaskInput> {
           GestureDetector(
             onTap: widget.onMicTap,
             child: Container(
-              width: 38,
-              height: 38,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 color: const Color(0x266366F1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
-                Icons.mic,
+                CupertinoIcons.mic,
                 color: Color(0xFF818CF8),
-                size: 18,
+                size: 20,
               ),
             ),
           ),
