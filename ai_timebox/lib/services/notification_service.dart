@@ -21,6 +21,12 @@ class NotificationService {
 
   Future<void> init() async {
     tz_data.initializeTimeZones();
+    // Set local timezone — default to Asia/Kolkata for India
+    try {
+      tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+    } catch (_) {
+      tz.setLocalLocation(tz.getLocation('UTC'));
+    }
 
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,

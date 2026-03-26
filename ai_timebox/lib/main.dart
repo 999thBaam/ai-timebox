@@ -9,17 +9,20 @@ import 'theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialise notifications
-  final notificationService = NotificationService();
-  await notificationService.init();
+  // Initialise notifications — wrapped in try-catch to prevent launch crash
+  try {
+    final notificationService = NotificationService();
+    await notificationService.init();
 
-  // Schedule default notifications on first launch
-  final prefs = await SharedPreferences.getInstance();
-  final notificationsScheduled =
-      prefs.getBool('notifications_scheduled') ?? false;
-  if (!notificationsScheduled) {
-    await notificationService.scheduleDefaults();
-    await prefs.setBool('notifications_scheduled', true);
+    final prefs = await SharedPreferences.getInstance();
+    final notificationsScheduled =
+        prefs.getBool('notifications_scheduled') ?? false;
+    if (!notificationsScheduled) {
+      await notificationService.scheduleDefaults();
+      await prefs.setBool('notifications_scheduled', true);
+    }
+  } catch (e) {
+    debugPrint('Notification init failed: $e');
   }
 
   runApp(const AiTimeboxApp());
