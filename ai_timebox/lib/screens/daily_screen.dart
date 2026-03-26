@@ -333,7 +333,7 @@ class _DailyBodyState extends State<_DailyBody> {
             style: TextStyle(color: AppColors.textPrimary),
           ),
           content: const Text(
-            'To generate smart schedules, enter your Claude API key in Settings. Or continue with offline mode.',
+            'To generate smart schedules, enter your OpenAI API key in Settings. Or continue with offline mode.',
             style: TextStyle(color: AppColors.textSecondary),
           ),
           actions: [

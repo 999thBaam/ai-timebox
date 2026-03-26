@@ -240,7 +240,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Row(
                 children: [
                   const Text(
-                    'Claude API Key',
+                    'OpenAI API Key',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,

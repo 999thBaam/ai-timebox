@@ -7,9 +7,9 @@ import '../models/task.dart';
 
 class LlmService {
   static const _storage = FlutterSecureStorage();
-  static const _apiUrl = 'https://api.anthropic.com/v1/messages';
-  static const _model = 'claude-sonnet-4-20250514';
-  static const _apiKeyStorageKey = 'claude_api_key';
+  static const _apiUrl = 'https://api.openai.com/v1/chat/completions';
+  static const _model = 'gpt-4o-mini';
+  static const _apiKeyStorageKey = 'openai_api_key';
 
   Future<String?> getApiKey() async {
     return await _storage.read(key: _apiKeyStorageKey);
@@ -19,7 +19,7 @@ class LlmService {
     await _storage.write(key: _apiKeyStorageKey, value: key);
   }
 
-  Future<Map<String, dynamic>?> _callClaude(
+  Future<Map<String, dynamic>?> _callLlm(
     String systemPrompt,
     String userMessage,
   ) async {
@@ -29,8 +29,9 @@ class LlmService {
     final body = jsonEncode({
       'model': _model,
       'max_tokens': 2048,
-      'system': systemPrompt,
+      'response_format': {'type': 'json_object'},
       'messages': [
+        {'role': 'system', 'content': systemPrompt},
         {'role': 'user', 'content': userMessage},
       ],
     });
@@ -40,16 +41,15 @@ class LlmService {
         Uri.parse(_apiUrl),
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
+          'Authorization': 'Bearer $apiKey',
         },
         body: body,
       );
 
-      final responseBody = response.body;
-      final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
-      final text =
-          (decoded['content'] as List<dynamic>)[0]['text'] as String;
+      if (response.statusCode != 200) return null;
+
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final text = (decoded['choices'] as List<dynamic>)[0]['message']['content'] as String;
 
       // Strip markdown code fences if present
       final stripped = text.trim().replaceAll(RegExp(r'^```[a-z]*\n?'), '').replaceAll(RegExp(r'\n?```$'), '').trim();
@@ -81,19 +81,19 @@ class LlmService {
     List<String> rawTitles,
   ) async {
     const systemPrompt = '''
-You are a task parsing assistant. Given a list of task titles, return a JSON array where each element has:
+You are a task parsing assistant. Given a list of task titles, return a JSON object with a "tasks" key containing an array where each element has:
 - "title": string (cleaned task title)
 - "pillar": one of "work", "health", "errand", "social"
 - "estimated_minutes": integer (realistic time estimate)
 - "task_type": one of "deep_focus", "quick", "outing", "call"
 
-Respond ONLY with a valid JSON array. No explanation, no markdown fences.
+Respond ONLY with valid JSON.
 ''';
 
     final userMessage =
         'Parse these tasks:\n${rawTitles.asMap().entries.map((e) => '${e.key + 1}. ${e.value}').join('\n')}';
 
-    final result = await _callClaude(systemPrompt, userMessage);
+    final result = await _callLlm(systemPrompt, userMessage);
     if (result == null) return null;
 
     // Accept either {'items': [...]} or {'tasks': [...]}
@@ -132,7 +132,7 @@ Return a JSON object with:
 
 Be realistic about time. Include buffer slots between tasks. Add health nudges if health activity count is low. Be compassionate if tasks were rolled over.
 
-Respond ONLY with valid JSON. No explanation, no markdown fences.
+Respond ONLY with valid JSON.
 ''';
 
     final beliefSummary = beliefs.entries.map((e) {
@@ -161,7 +161,7 @@ Tasks to schedule:
 $taskList
 ''';
 
-    return await _callClaude(systemPrompt, userMessage);
+    return await _callLlm(systemPrompt, userMessage);
   }
 
   /// Job 3: Generate end-of-day insights based on completion data.
@@ -178,7 +178,7 @@ You are a compassionate daily review assistant. Given completion data, return a 
 - "health_insight": string (gentle observation about health activity, encouraging if low)
 - "undone_prompts": array of strings (kind, non-shaming prompts for each undone task — max 3)
 
-Be brief, warm, and human. No toxic positivity. Respond ONLY with valid JSON. No markdown fences.
+Be brief, warm, and human. No toxic positivity. Respond ONLY with valid JSON.
 ''';
 
     final undoneList = undoneTasks.isEmpty
@@ -192,6 +192,6 @@ Current streak: $streakDays days
 Undone tasks: $undoneList
 ''';
 
-    return await _callClaude(systemPrompt, userMessage);
+    return await _callLlm(systemPrompt, userMessage);
   }
 }
