@@ -19,33 +19,8 @@ import '../widgets/health_nudge.dart';
 import '../widgets/task_check_item.dart';
 import '../widgets/task_input.dart';
 import '../widgets/timeline_block.dart';
-
-// ---------------------------------------------------------------------------
-// WeekScreen placeholder
-// ---------------------------------------------------------------------------
-
-class WeekScreen extends StatelessWidget {
-  const WeekScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Center(
-          child: Text(
-            'Week View',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 24,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+import 'review_screen.dart';
+import 'week_screen.dart';
 
 // ---------------------------------------------------------------------------
 // DailyScreen (shell with bottom nav)
@@ -731,6 +706,23 @@ class _DailyBodyState extends State<_DailyBody> {
                       ),
                     ),
                   ],
+                ),
+              ),
+              // Review day link
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ReviewScreen()),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.only(top: 6, right: 14),
+                  child: Text(
+                    'Review day',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.healthPrimary,
+                    ),
+                  ),
                 ),
               ),
               // Edit link
