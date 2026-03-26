@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'storage/local_db.dart';
 import 'screens/setup_screen.dart';
+import 'screens/daily_screen.dart';
 import 'theme.dart';
 
 void main() {
@@ -65,30 +66,8 @@ class _AppRouterState extends State<_AppRouter> {
           return const SetupScreen();
         }
 
-        // WeekConfig exists — show DailyScreen placeholder
-        return const _DailyScreenStub();
+        return const DailyScreen();
       },
-    );
-  }
-}
-
-/// Temporary placeholder until Task 11 (DailyScreen) is built.
-class _DailyScreenStub extends StatelessWidget {
-  const _DailyScreenStub();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Text(
-          'Daily Screen',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 24,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
     );
   }
 }

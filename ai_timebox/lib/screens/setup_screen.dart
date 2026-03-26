@@ -6,6 +6,7 @@ import '../services/belief_engine.dart';
 import '../storage/local_db.dart';
 import '../theme.dart';
 import '../widgets/glass_card.dart';
+import 'daily_screen.dart';
 
 // ---------------------------------------------------------------------------
 // SetupScreen
@@ -173,7 +174,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const _DailyScreenPlaceholder()),
+          MaterialPageRoute(builder: (_) => const DailyScreen()),
           (_) => false,
         );
       }
@@ -469,26 +470,3 @@ class _SetupDayPill extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Daily screen placeholder (used until Task 11 is built)
-// ---------------------------------------------------------------------------
-
-class _DailyScreenPlaceholder extends StatelessWidget {
-  const _DailyScreenPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Text(
-          'Daily Screen',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 24,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
