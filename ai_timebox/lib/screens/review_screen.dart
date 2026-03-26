@@ -4,7 +4,7 @@ import '../models/day_review.dart';
 import '../models/enums.dart';
 import '../models/task.dart';
 import '../services/llm_service.dart';
-import '../storage/local_db.dart';
+import '../main.dart' show db;
 import '../theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/task_check_item.dart';
@@ -17,9 +17,7 @@ class ReviewScreen extends StatefulWidget {
 }
 
 class _ReviewScreenState extends State<ReviewScreen> {
-  final _db = LocalDb();
   final _llm = LlmService();
-  bool _dbOpen = false;
 
   // Data
   List<Task> _tasks = [];
@@ -44,8 +42,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _init() async {
-    await _db.init();
-    _dbOpen = true;
     await _loadData();
   }
 
@@ -53,11 +49,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final today = _today();
     final yesterday = today.subtract(const Duration(days: 1));
 
-    final tasks = await _db.getTasksForDate(today);
-    final dropped = await _db.getDroppedTasks();
+    final tasks = await db.getTasksForDate(today);
+    final dropped = await db.getDroppedTasks();
 
     // Check if there's a health log today
-    final weekLogs = await _db.getHealthLogsForWeek(
+    final weekLogs = await db.getHealthLogsForWeek(
       today.subtract(Duration(days: today.weekday - 1)),
     );
     final hasHealthToday = weekLogs.any((log) {
@@ -66,7 +62,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     });
 
     // Compute streak
-    final yesterdayReview = await _db.getDayReview(yesterday);
+    final yesterdayReview = await db.getDayReview(yesterday);
     final streak =
         yesterdayReview != null ? yesterdayReview.streakDay + 1 : 1;
 
@@ -112,7 +108,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   @override
   void dispose() {
-    if (_dbOpen) _db.close();
     super.dispose();
   }
 
@@ -158,7 +153,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         totalCount: _tasks.length,
         streakDay: _streakDays,
       );
-      await _db.saveDayReview(review);
+      await db.saveDayReview(review);
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -169,13 +164,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Future<void> _moveToTomorrow(Task task) async {
     final tomorrow = _today().add(const Duration(days: 1));
-    await _db.moveTask(task.id, tomorrow);
+    await db.moveTask(task.id, tomorrow);
     _reloadTasks();
     setState(() => _actedOn.add(task.id));
   }
 
   Future<void> _letItGo(Task task) async {
-    await _db.updateTaskStatus(task.id, TaskStatus.dropped);
+    await db.updateTaskStatus(task.id, TaskStatus.dropped);
     _reloadTasks();
     setState(() => _actedOn.add(task.id));
   }
@@ -198,7 +193,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       ),
     );
     if (picked != null) {
-      await _db.moveTask(task.id, picked);
+      await db.moveTask(task.id, picked);
       _reloadTasks();
       setState(() => _actedOn.add(task.id));
     }
@@ -207,14 +202,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Future<void> _lockItIn(Task task) async {
     // V1: just move to tomorrow
     final tomorrow = _today().add(const Duration(days: 1));
-    await _db.moveTask(task.id, tomorrow);
+    await db.moveTask(task.id, tomorrow);
     _reloadTasks();
     setState(() => _actedOn.add(task.id));
   }
 
   Future<void> _reloadTasks() async {
-    final tasks = await _db.getTasksForDate(_today());
-    final dropped = await _db.getDroppedTasks();
+    final tasks = await db.getTasksForDate(_today());
+    final dropped = await db.getDroppedTasks();
     if (!mounted) return;
     setState(() {
       _tasks = tasks;
@@ -223,14 +218,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _reviveTask(Task task) async {
-    await _db.updateTaskStatus(task.id, TaskStatus.pending);
+    await db.updateTaskStatus(task.id, TaskStatus.pending);
     // We also need to set the scheduled_date to today; use moveTask so
     // scheduled_date is updated, but avoid incrementing times_moved by
     // directly updating. Since we don't have a direct "reschedule without
     // increment", we use moveTask and accept the +1 — acceptable for revives.
-    await _db.moveTask(task.id, _today());
-    final dropped = await _db.getDroppedTasks();
-    final tasks = await _db.getTasksForDate(_today());
+    await db.moveTask(task.id, _today());
+    final dropped = await db.getDroppedTasks();
+    final tasks = await db.getTasksForDate(_today());
     if (!mounted) return;
     setState(() {
       _droppedTasks = dropped;

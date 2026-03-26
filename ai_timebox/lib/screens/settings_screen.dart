@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../services/llm_service.dart';
 import '../services/notification_service.dart';
-import '../storage/local_db.dart';
+import '../main.dart' show db;
 import '../theme.dart';
 import '../widgets/glass_card.dart';
 import 'setup_screen.dart';
@@ -47,10 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final morningTime = await _notificationService.getMorningTime();
     final eveningTime = await _notificationService.getEveningTime();
 
-    final db = LocalDb();
-    await db.init();
     final config = await db.getLatestWeekConfig();
-    await db.close();
 
     if (!mounted) return;
     setState(() {

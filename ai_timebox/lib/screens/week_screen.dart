@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/enums.dart';
 import '../models/task.dart';
 import '../models/week_config.dart';
-import '../storage/local_db.dart';
+import '../main.dart' show db;
 import '../theme.dart';
 import '../widgets/day_pill.dart';
 import '../widgets/glass_card.dart';
@@ -16,10 +16,6 @@ class WeekScreen extends StatefulWidget {
 }
 
 class _WeekScreenState extends State<WeekScreen> {
-  // DB
-  final _db = LocalDb();
-  bool _dbOpen = false;
-
   // Data
   WeekConfig? _weekConfig;
   int _selectedDayIndex = 0; // 0=Mon..6=Sun
@@ -46,13 +42,11 @@ class _WeekScreenState extends State<WeekScreen> {
   }
 
   Future<void> _init() async {
-    await _db.init();
-    _dbOpen = true;
     await _loadData();
   }
 
   Future<void> _loadData() async {
-    final config = await _db.getLatestWeekConfig();
+    final config = await db.getLatestWeekConfig();
 
     // Compute the Monday of the current week
     final now = DateTime.now();
@@ -65,7 +59,7 @@ class _WeekScreenState extends State<WeekScreen> {
 
     for (int i = 0; i < 7; i++) {
       final day = weekStart.add(Duration(days: i));
-      final tasks = await _db.getTasksForDate(day);
+      final tasks = await db.getTasksForDate(day);
       tasksByDay[i] = tasks;
       for (final t in tasks) {
         switch (t.status) {
@@ -96,7 +90,6 @@ class _WeekScreenState extends State<WeekScreen> {
 
   @override
   void dispose() {
-    if (_dbOpen) _db.close();
     super.dispose();
   }
 

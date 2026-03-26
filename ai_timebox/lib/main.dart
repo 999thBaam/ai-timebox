@@ -6,9 +6,11 @@ import 'screens/setup_screen.dart';
 import 'screens/daily_screen.dart';
 import 'theme.dart';
 
+/// Global DB instance — opened once, stays open for app lifetime.
+final db = LocalDb();
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Show UI immediately — heavy init happens in background
   runApp(const AiTimeboxApp());
 }
 
@@ -44,7 +46,6 @@ class AiTimeboxApp extends StatelessWidget {
   }
 }
 
-/// Checks for an existing WeekConfig and routes to the correct first screen.
 class _AppRouter extends StatefulWidget {
   const _AppRouter();
 
@@ -59,15 +60,12 @@ class _AppRouterState extends State<_AppRouter> {
   void initState() {
     super.initState();
     _hasConfigFuture = _checkWeekConfig();
-    // Init notifications in background — don't block UI
     _initNotifications();
   }
 
   Future<bool> _checkWeekConfig() async {
-    final db = LocalDb();
     await db.init();
     final config = await db.getLatestWeekConfig();
-    await db.close();
     return config != null;
   }
 
@@ -76,7 +74,6 @@ class _AppRouterState extends State<_AppRouter> {
     return FutureBuilder<bool>(
       future: _hasConfigFuture,
       builder: (context, snapshot) {
-        // Show a blank dark screen while loading
         if (!snapshot.hasData) {
           return const Scaffold(
             backgroundColor: AppColors.background,
@@ -84,9 +81,7 @@ class _AppRouterState extends State<_AppRouter> {
           );
         }
 
-        final hasConfig = snapshot.data!;
-
-        if (!hasConfig) {
+        if (!snapshot.data!) {
           return const SetupScreen();
         }
 

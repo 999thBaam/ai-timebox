@@ -247,7 +247,7 @@ async def set_theme(request: SetThemeRequest) -> ChatResponse:
     session = await onboarding_orchestrator.set_theme(request.session_id, request.theme)
     
     return ChatResponse(
-        message=f"Theme set: {request.theme}. Now, what specific tasks do you need to get done this week?",
+        message=f"Got it — your week is about: {request.theme}\n\nNow just list what you need to get done. One task per message, like:\n\n• \"Fix the login bug\"\n• \"Write 3 Instagram posts\"\n• \"Call the designer\"\n\nType 'done' when you've added everything.",
         should_stop=False,
         extracted_tasks_count=0
     )

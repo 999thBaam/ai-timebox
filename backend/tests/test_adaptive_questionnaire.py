@@ -76,7 +76,7 @@ class TestFullFlowMinQuestions:
         aq.submit_answer("focus_duration", "30-60 min")
 
         aq.get_next_question()  # drain_source
-        aq.submit_answer("drain_source", "Context switching")
+        aq.submit_answer("drain_source", "Jumping between different tasks")
 
         # No more questions
         assert aq.get_next_question() is None
@@ -93,7 +93,7 @@ class TestGetBeliefs:
 
         aq.submit_answer("energy_peak", "Morning")
         aq.submit_answer("focus_duration", "30-60 min")
-        aq.submit_answer("drain_source", "Meetings")
+        aq.submit_answer("drain_source", "Too many calls and meetings")
 
         beliefs = aq.get_beliefs()
 
@@ -116,7 +116,7 @@ class TestGetSummary:
 
         aq.submit_answer("energy_peak", "Late Night")
         aq.submit_answer("focus_duration", "30-60 min")
-        aq.submit_answer("drain_source", "Context switching")
+        aq.submit_answer("drain_source", "Jumping between different tasks")
 
         summary = aq.get_summary()
         assert isinstance(summary, str)

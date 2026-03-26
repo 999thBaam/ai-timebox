@@ -54,7 +54,7 @@ export default function OnboardingPage() {
         try {
             const res = await selectRole(role);
             setSessionId(res.session_id);
-            setCurrentQuestion(res.first_question);
+            setCurrentQuestion(res.next_question);
             setPhase('questionnaire');
         } catch (e) {
             console.error(e);
@@ -174,7 +174,7 @@ export default function OnboardingPage() {
     };
 
     return (
-        <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center py-12 px-4">
             <div className="w-full max-w-2xl bg-slate-900/50 p-8 rounded-2xl border border-slate-800 shadow-xl backdrop-blur-sm">
 
                 {/* Header */}
@@ -244,7 +244,7 @@ export default function OnboardingPage() {
                         <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
                             {messages.map((m, i) => (
                                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[80%] p-4 rounded-2xl ${m.role === 'user'
+                                    <div className={`max-w-[80%] p-4 rounded-2xl whitespace-pre-line ${m.role === 'user'
                                             ? 'bg-indigo-600 text-white rounded-br-none'
                                             : 'bg-slate-800 text-slate-200 rounded-bl-none'
                                         }`}>
@@ -265,7 +265,7 @@ export default function OnboardingPage() {
                             <input
                                 type="text"
                                 className="flex-1 bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                placeholder="Type a task..."
+                                placeholder="e.g. Fix the login bug"
                                 value={input}
                                 onChange={e => setInput(e.target.value)}
                                 autoFocus
@@ -275,9 +275,18 @@ export default function OnboardingPage() {
                                 disabled={loading || !input.trim()}
                                 className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white p-4 rounded-xl transition-colors"
                             >
-                                Send
+                                Add
                             </button>
                         </form>
+                        {messages.filter(m => m.role === 'user').length > 0 && (
+                            <button
+                                onClick={generateDraftSchedule}
+                                disabled={loading}
+                                className="mt-3 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
+                            >
+                                Done — Build my schedule
+                            </button>
+                        )}
                     </div>
                 )}
 

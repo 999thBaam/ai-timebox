@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/week_config.dart';
 import '../services/belief_engine.dart';
-import '../storage/local_db.dart';
+import '../main.dart' show db;
 import '../theme.dart';
 import '../widgets/glass_card.dart';
 import 'daily_screen.dart';
@@ -52,10 +52,7 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Future<void> _loadExistingConfig() async {
-    final db = LocalDb();
-    await db.init();
     final config = await db.getLatestWeekConfig();
-    await db.close();
 
     if (config != null && mounted) {
       setState(() {
@@ -111,9 +108,6 @@ class _SetupScreenState extends State<SetupScreen> {
     setState(() => _saving = true);
 
     try {
-      final db = LocalDb();
-      await db.init();
-
       final now = DateTime.now();
       // Week start = most recent Monday
       final weekday = now.weekday; // 1=Mon
@@ -169,8 +163,6 @@ class _SetupScreenState extends State<SetupScreen> {
           }
         }
       }
-
-      await db.close();
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(

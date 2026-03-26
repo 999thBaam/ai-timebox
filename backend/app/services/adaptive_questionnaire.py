@@ -40,20 +40,20 @@ FOCUS_ENCODING: dict[str, float] = {
 _CORE_QUESTIONS: list[dict] = [
     {
         "id": "energy_peak",
-        "text": "When do you feel most focused and energetic?",
+        "text": "You have one important task to finish today. When would you schedule it?",
         "options": ["Morning", "Afternoon", "Evening", "Late Night"],
         "parameter": BeliefParameter.PEAK_ENERGY,
     },
     {
         "id": "focus_duration",
-        "text": "How long can you focus without a break?",
+        "text": "You're solving a hard problem. How long before you'd want to step away?",
         "options": ["Under 30 min", "30-60 min", "1-2 hours", "2+ hours"],
         "parameter": BeliefParameter.DEEP_WORK_TOLERANCE,
     },
     {
         "id": "drain_source",
-        "text": "What drains your energy the most?",
-        "options": ["Meetings", "Context switching", "Long focus", "Interruptions"],
+        "text": "Think about your worst workday recently. What made it exhausting?",
+        "options": ["Too many calls and meetings", "Jumping between different tasks", "Staying focused for too long", "People and notifications breaking my flow"],
         "parameter": None,  # maps to multiple beliefs
     },
 ]
@@ -61,25 +61,25 @@ _CORE_QUESTIONS: list[dict] = [
 _FOLLOW_UP_TEMPLATES: dict[str, dict] = {
     "schedule_flexibility": {
         "id": "schedule_flexibility",
-        "text": "How flexible is your daily schedule?",
+        "text": "An unexpected meeting lands on your calendar. What happens to the rest of your day?",
         "options": ["Very rigid", "Somewhat flexible", "Very flexible", "Completely open"],
         "parameter": BeliefParameter.CHAOS_TOLERANCE,
     },
     "work_pattern": {
         "id": "work_pattern",
-        "text": "Do you prefer long uninterrupted blocks or short sprints?",
+        "text": "You have 4 free hours. Do you tackle one big thing or several small ones?",
         "options": ["Long blocks", "Medium blocks", "Short sprints", "Mixed"],
         "parameter": BeliefParameter.DEEP_WORK_TOLERANCE,
     },
     "disruption_response": {
         "id": "disruption_response",
-        "text": "When your schedule gets disrupted, what do you do?",
+        "text": "Your morning plan just fell apart. What do you actually do?",
         "options": ["Rework the plan", "Adjust and continue", "Push through anyway"],
         "parameter": BeliefParameter.CHAOS_TOLERANCE,
     },
     "meeting_limit": {
         "id": "meeting_limit",
-        "text": "How many meetings per day feels comfortable?",
+        "text": "Imagine a day packed with back-to-back calls. How many before you'd cancel one?",
         "options": ["2 or fewer", "3-4", "5+", "No limit"],
         "parameter": BeliefParameter.MEETING_TOLERANCE,
     },
@@ -129,9 +129,9 @@ def _compute_conflict(encoded_value: float, role_default: float, param: BeliefPa
 # ---------------------------------------------------------------------------
 
 _DRAIN_ADJUSTMENTS: dict[str, tuple[BeliefParameter, float]] = {
-    "Meetings": (BeliefParameter.MEETING_TOLERANCE, -0.2),
-    "Context switching": (BeliefParameter.CONTEXT_SWITCH_COST, 0.2),
-    "Long focus": (BeliefParameter.DEEP_WORK_TOLERANCE, -15.0),
+    "Too many calls and meetings": (BeliefParameter.MEETING_TOLERANCE, -0.2),
+    "Jumping between different tasks": (BeliefParameter.CONTEXT_SWITCH_COST, 0.2),
+    "Staying focused for too long": (BeliefParameter.DEEP_WORK_TOLERANCE, -15.0),
 }
 
 # ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ class AdaptiveQuestionnaire:
                 self._belief_adjustments[param] = base + delta
             # drain_source can also conflict when "Meetings" is selected for a role
             # that expects high meeting tolerance
-            if answer == "Meetings":
+            if answer == "Too many calls and meetings":
                 role_meeting = self.profile.defaults.get(BeliefParameter.MEETING_TOLERANCE, 0.5)
                 if role_meeting > 0.5:
                     conflict = True
