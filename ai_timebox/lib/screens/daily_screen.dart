@@ -12,7 +12,7 @@ import '../services/health_tracker.dart';
 import '../services/llm_service.dart';
 import '../services/offline_scheduler.dart';
 import '../services/speech_service.dart';
-import '../storage/local_db.dart';
+import '../main.dart' show db;
 import '../theme.dart';
 import '../widgets/energy_check.dart';
 import '../widgets/health_nudge.dart';
@@ -160,13 +160,10 @@ class _DailyBodyState extends State<_DailyBody> {
   List<Task> _rolledTasks = [];
 
   // Services
-  final _db = LocalDb();
   final _llmService = LlmService();
   final _beliefEngine = BeliefEngine();
   final _speechService = SpeechService();
   bool _speechAvailable = false;
-
-  bool _dbOpen = false;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -179,18 +176,15 @@ class _DailyBodyState extends State<_DailyBody> {
   }
 
   Future<void> _init() async {
-    await _db.init();
-    _dbOpen = true;
-
     final speechInit = _speechService.init();
 
-    final config = await _db.getLatestWeekConfig();
-    final beliefs = await _db.getAllBeliefs();
+    final config = await db.getLatestWeekConfig();
+    final beliefs = await db.getAllBeliefs();
     final today = _today();
-    final existingPlan = await _db.getDayPlan(today);
-    final todayTasks = await _db.getTasksForDate(today);
+    final existingPlan = await db.getDayPlan(today);
+    final todayTasks = await db.getTasksForDate(today);
     final yesterday = today.subtract(const Duration(days: 1));
-    final yesterdayTasks = await _db.getTasksForDate(yesterday);
+    final yesterdayTasks = await db.getTasksForDate(yesterday);
 
     await speechInit;
 
@@ -231,7 +225,6 @@ class _DailyBodyState extends State<_DailyBody> {
 
   @override
   void dispose() {
-    if (_dbOpen) _db.close();
     super.dispose();
   }
 
@@ -295,6 +288,103 @@ class _DailyBodyState extends State<_DailyBody> {
       scheduledDate: _today(),
     );
     setState(() => _tasks.add(task));
+  }
+
+  void _editTask(int index) async {
+    final task = _tasks[index];
+    final controller = TextEditingController(text: task.title);
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Edit task',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+              keyboardAppearance: Brightness.dark,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0x0DFFFFFF),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              onSubmitted: (val) => Navigator.pop(ctx, val.trim()),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pop(ctx, '__DELETE__');
+                    },
+                    child: const Text(
+                      'Delete task',
+                      style: TextStyle(color: Color(0xFFFB7185), fontSize: 14),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.workPrimary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Save', style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+
+    if (!mounted || result == null) return;
+
+    if (result == '__DELETE__') {
+      setState(() => _tasks.removeAt(index));
+    } else if (result.isNotEmpty) {
+      setState(() {
+        _tasks[index] = Task(
+          id: task.id,
+          title: result,
+          pillar: task.pillar,
+          estimatedMinutes: task.estimatedMinutes,
+          taskType: task.taskType,
+          status: task.status,
+          createdAt: task.createdAt,
+          scheduledDate: task.scheduledDate,
+          scheduledTime: task.scheduledTime,
+          timesMoved: task.timesMoved,
+        );
+      });
+    }
   }
 
   void _onMicTap() async {
@@ -395,16 +485,16 @@ class _DailyBodyState extends State<_DailyBody> {
 
       // Step 2: Save tasks to DB
       for (final task in _tasks) {
-        await _db.insertTask(task);
+        await db.insertTask(task);
       }
 
       // Step 3: Build health context
       final today = _today();
-      final weekLogs = await _db.getHealthLogsForWeek(
+      final weekLogs = await db.getHealthLogsForWeek(
         today.subtract(Duration(days: today.weekday - 1)),
       );
       final tracker = HealthTracker(
-        appDayCount: await _db.getCurrentStreak() + 1,
+        appDayCount: await db.getCurrentStreak() + 1,
         acceptedNudgesThisWeek: weekLogs.length,
       );
 
@@ -458,7 +548,7 @@ class _DailyBodyState extends State<_DailyBody> {
         scheduleJson: scheduleJson,
         insight: insight,
       );
-      await _db.saveDayPlan(plan);
+      await db.saveDayPlan(plan);
 
       if (!mounted) return;
       setState(() {
@@ -507,7 +597,7 @@ class _DailyBodyState extends State<_DailyBody> {
     if (taskId == null) return;
 
     // Mark done
-    await _db.updateTaskStatus(taskId, TaskStatus.done);
+    await db.updateTaskStatus(taskId, TaskStatus.done);
 
     // Update local list
     final idx = _tasks.indexWhere((t) => t.id == taskId);
@@ -547,7 +637,7 @@ class _DailyBodyState extends State<_DailyBody> {
 
   Future<void> _saveBeliefs(Map<BeliefParameter, Belief> beliefs) async {
     for (final belief in beliefs.values) {
-      await _db.saveBelief(belief);
+      await db.saveBelief(belief);
     }
   }
 
@@ -649,10 +739,20 @@ class _DailyBodyState extends State<_DailyBody> {
                   itemCount: _tasks.length,
                   itemBuilder: (context, i) {
                     final task = _tasks[i];
-                    return TaskCheckItem(
-                      title: task.title,
-                      isDone: task.status == TaskStatus.done,
-                      onTap: () {}, // not interactive in input mode
+                    return Dismissible(
+                      key: ValueKey(task.id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        child: const Icon(Icons.delete_outline, color: Color(0xFFFB7185)),
+                      ),
+                      onDismissed: (_) => setState(() => _tasks.removeAt(i)),
+                      child: TaskCheckItem(
+                        title: task.title,
+                        isDone: task.status == TaskStatus.done,
+                        onTap: () => _editTask(i),
+                      ),
                     );
                   },
                 ),
