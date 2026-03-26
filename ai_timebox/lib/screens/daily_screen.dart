@@ -734,27 +734,31 @@ class _DailyBodyState extends State<_DailyBody> {
         Expanded(
           child: _tasks.isEmpty
               ? const _EmptyTaskHint()
-              : ListView.builder(
+              : ListView(
                   padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-                  itemCount: _tasks.length,
-                  itemBuilder: (context, i) {
-                    final task = _tasks[i];
-                    return Dismissible(
-                      key: ValueKey(task.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        child: const Icon(Icons.delete_outline, color: Color(0xFFFB7185)),
+                  children: [
+                    for (var i = 0; i < _tasks.length; i++)
+                      Dismissible(
+                        key: ValueKey(_tasks[i].id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          child: const Icon(Icons.delete_outline, color: Color(0xFFFB7185)),
+                        ),
+                        onDismissed: (_) {
+                          final taskId = _tasks[i].id;
+                          setState(() {
+                            _tasks.removeWhere((t) => t.id == taskId);
+                          });
+                        },
+                        child: TaskCheckItem(
+                          title: _tasks[i].title,
+                          isDone: _tasks[i].status == TaskStatus.done,
+                          onTap: () => _editTask(i),
+                        ),
                       ),
-                      onDismissed: (_) => setState(() => _tasks.removeAt(i)),
-                      child: TaskCheckItem(
-                        title: task.title,
-                        isDone: task.status == TaskStatus.done,
-                        onTap: () => _editTask(i),
-                      ),
-                    );
-                  },
+                  ],
                 ),
         ),
 
